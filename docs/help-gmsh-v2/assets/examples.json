@@ -1,0 +1,1340 @@
+[
+  {
+    "id": "nTEST001",
+    "sourceModel": "examples/atomic/models/nTEST001.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "Reinforced Concrete",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.2,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.16,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 50,
+      "quads": 50,
+      "triangles": 0
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 50 quads, 0 triangles. Outside shape references: 0 (0% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST003",
+    "sourceModel": "examples/atomic/models/nTEST003.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "Reinforced Concrete",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.16,
+    "fast": false,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.128,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 61,
+      "quads": 49,
+      "triangles": 12
+    },
+    "qualityPassed": false,
+    "qualitySummary": "Elements: 49 quads, 12 triangles. Outside shape references: 0 (0% of area). Size exceptions: 4 elements (6.842% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST010",
+    "sourceModel": "examples/atomic/models/nTEST010.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [
+      "B1",
+      "B2",
+      "B3",
+      "T1",
+      "T2",
+      "T3",
+      "T4"
+    ],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "Reinforced Concrete",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.2,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.16,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 63,
+      "quads": 62,
+      "triangles": 1
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 62 quads, 1 triangles. Outside shape references: 0 (0% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST011",
+    "sourceModel": "examples/atomic/models/nTEST011.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [
+      "P1",
+      "P2",
+      "P3"
+    ],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.16,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.128,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 107,
+      "quads": 101,
+      "triangles": 6
+    },
+    "qualityPassed": false,
+    "qualitySummary": "Elements: 101 quads, 6 triangles. Outside shape references: 1 (0.191% of area). Size exceptions: 3 elements (3.063% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST012",
+    "sourceModel": "examples/atomic/models/nTEST012.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [
+      "F1",
+      "F2",
+      "F3"
+    ],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.14,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.112,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 164,
+      "quads": 140,
+      "triangles": 24
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 140 quads, 24 triangles. Outside shape references: 4 (1.095% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST014",
+    "sourceModel": "examples/atomic/models/nTEST014.sdb",
+    "selectedAreas": [
+      "A1",
+      "A2"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.16,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.128,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 144,
+      "quads": 143,
+      "triangles": 1
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 143 quads, 1 triangles. Outside shape references: 0 (0% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST010-locked",
+    "sourceModel": "examples/atomic/models/nTEST010.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [
+      "B1",
+      "B2",
+      "B3",
+      "T1",
+      "T2",
+      "T3",
+      "T4"
+    ],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "Reinforced Concrete",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.2,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": true,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.16,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 47,
+      "quads": 38,
+      "triangles": 9
+    },
+    "qualityPassed": false,
+    "qualitySummary": "Elements: 38 quads, 9 triangles. Outside shape references: 10 (26.243% of area). Size exceptions: 23 elements (63.241% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST005",
+    "sourceModel": "examples/atomic/models/nTEST005.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "Steel Structures",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.08,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.064,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 179,
+      "quads": 161,
+      "triangles": 18
+    },
+    "qualityPassed": false,
+    "qualitySummary": "Elements: 161 quads, 18 triangles. Outside shape references: 0 (0% of area). Size exceptions: 4 elements (2.496% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST017",
+    "sourceModel": "examples/atomic/models/nTEST017.sdb",
+    "selectedAreas": [
+      "A1",
+      "A2"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "Steel Structures",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.1,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.08,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 337,
+      "quads": 311,
+      "triangles": 26
+    },
+    "qualityPassed": false,
+    "qualitySummary": "Elements: 311 quads, 26 triangles. Outside shape references: 5 (0.722% of area). Size exceptions: 7 elements (2.42% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST024",
+    "sourceModel": "examples/atomic/models/nTEST024.sdb",
+    "selectedAreas": [
+      "1"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.03,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.024,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 195,
+      "quads": 151,
+      "triangles": 44
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 151 quads, 44 triangles. Outside shape references: 9 (3.274% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST007",
+    "sourceModel": "examples/atomic/models/nTEST007.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [
+      "F1",
+      "F2",
+      "F3",
+      "F4"
+    ],
+    "profileFromV1Manifest": "Reinforced Concrete",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.12,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.096,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 278,
+      "quads": 274,
+      "triangles": 4
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 274 quads, 4 triangles. Outside shape references: 0 (0% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST008",
+    "sourceModel": "examples/atomic/models/nTEST008.sdb",
+    "selectedAreas": [
+      "A1",
+      "A2",
+      "A3",
+      "A4"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [
+      "F1",
+      "F2",
+      "F3",
+      "F4"
+    ],
+    "profileFromV1Manifest": "Reinforced Concrete",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.12,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.096,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 296,
+      "quads": 284,
+      "triangles": 12
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 284 quads, 12 triangles. Outside shape references: 0 (0% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST013",
+    "sourceModel": "examples/atomic/models/nTEST013.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [
+      "F1",
+      "F2",
+      "F3",
+      "F4"
+    ],
+    "profileFromV1Manifest": "Reinforced Concrete",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.14,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.112,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 167,
+      "quads": 163,
+      "triangles": 4
+    },
+    "qualityPassed": false,
+    "qualitySummary": "Elements: 163 quads, 4 triangles. Outside shape references: 0 (0% of area). Size exceptions: 6 elements (3.489% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST018",
+    "sourceModel": "examples/atomic/models/nTEST018.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [
+      "F1",
+      "F2",
+      "F3",
+      "F4"
+    ],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.12,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.096,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 308,
+      "quads": 298,
+      "triangles": 10
+    },
+    "qualityPassed": false,
+    "qualitySummary": "Elements: 298 quads, 10 triangles. Outside shape references: 0 (0% of area). Size exceptions: 6 elements (2.577% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST019",
+    "sourceModel": "examples/atomic/models/nTEST019.sdb",
+    "selectedAreas": [
+      "A1",
+      "A2"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [
+      "F1",
+      "F2",
+      "F3"
+    ],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.12,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.096,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 309,
+      "quads": 307,
+      "triangles": 2
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 307 quads, 2 triangles. Outside shape references: 0 (0% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST020",
+    "sourceModel": "examples/atomic/models/nTEST020.sdb",
+    "selectedAreas": [
+      "A1",
+      "A2",
+      "A3",
+      "A4",
+      "A5"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.1,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.08,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 592,
+      "quads": 592,
+      "triangles": 0
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 592 quads, 0 triangles. Outside shape references: 0 (0% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST028",
+    "sourceModel": "examples/atomic/models/nTEST028.sdb",
+    "selectedAreas": [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.08,
+    "fast": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.064,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 657,
+      "quads": 619,
+      "triangles": 38
+    },
+    "qualityPassed": false,
+    "qualitySummary": "Elements: 619 quads, 38 triangles. Outside shape references: 1 (0.058% of area). Size exceptions: 13 elements (2.26% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST035",
+    "sourceModel": "examples/atomic/models/nTEST035.sdb",
+    "selectedAreas": [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.08,
+    "fast": false,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.064,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 657,
+      "quads": 619,
+      "triangles": 38
+    },
+    "qualityPassed": false,
+    "qualitySummary": "Elements: 619 quads, 38 triangles. Outside shape references: 1 (0.058% of area). Size exceptions: 13 elements (2.26% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST005-ogrid",
+    "sourceModel": "examples/atomic/models/nTEST005.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "Steel Structures",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.08,
+    "fast": true,
+    "circularGroup": "hole_centers",
+    "holeDiameter": 0.24,
+    "exactSymmetry": false,
+    "oGrid": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "oGrid": true,
+      "exactSymmetry": false,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.064,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 440,
+      "quads": 392,
+      "triangles": 48
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 392 quads, 48 triangles. Outside shape references: 6 (0.826% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST006-ogrid",
+    "sourceModel": "examples/atomic/models/nTEST006.sdb",
+    "selectedAreas": [
+      "A1",
+      "A2",
+      "A3",
+      "A4"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "Steel Structures",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.1,
+    "fast": true,
+    "circularGroup": "hole_centers",
+    "holeDiameter": 0.3,
+    "exactSymmetry": true,
+    "oGrid": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "oGrid": true,
+      "exactSymmetry": true,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.08,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 680,
+      "quads": 608,
+      "triangles": 72
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 608 quads, 72 triangles. Outside shape references: 12 (0.91% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST015-symmetry",
+    "sourceModel": "examples/atomic/models/nTEST015.sdb",
+    "selectedAreas": [
+      "A1"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.14,
+    "fast": true,
+    "circularGroup": null,
+    "holeDiameter": null,
+    "exactSymmetry": true,
+    "oGrid": false,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "oGrid": false,
+      "exactSymmetry": true,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.112,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 120,
+      "quads": 120,
+      "triangles": 0
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 120 quads, 0 triangles. Outside shape references: 0 (0% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST025-ogrid",
+    "sourceModel": "examples/atomic/models/nTEST025.sdb",
+    "selectedAreas": [
+      "2"
+    ],
+    "selectedPoints": [
+      "4",
+      "28",
+      "39",
+      "50",
+      "61",
+      "72",
+      "83",
+      "94",
+      "105",
+      "116",
+      "3",
+      "6",
+      "126",
+      "194",
+      "229",
+      "264",
+      "299",
+      "334",
+      "369",
+      "404",
+      "439",
+      "474",
+      "509",
+      "544",
+      "579",
+      "614",
+      "649",
+      "684",
+      "719",
+      "754",
+      "789",
+      "824",
+      "859",
+      "894",
+      "929",
+      "964",
+      "999",
+      "1034",
+      "1069",
+      "1104",
+      "1139",
+      "1174",
+      "1209",
+      "1244",
+      "1279",
+      "5"
+    ],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.1,
+    "fast": true,
+    "circularGroup": "FORO",
+    "holeDiameter": 0.3,
+    "exactSymmetry": true,
+    "oGrid": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "oGrid": true,
+      "exactSymmetry": true,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.08,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 1680,
+      "quads": 1624,
+      "triangles": 56
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 368 quads, 56 triangles. Outside shape references: 6 (1.774% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST027-ogrid",
+    "sourceModel": "examples/atomic/models/nTEST027.sdb",
+    "selectedAreas": [
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    "selectedPoints": [],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "General Purpose",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.01,
+    "fast": true,
+    "circularGroup": "foro",
+    "holeDiameter": 0.03,
+    "exactSymmetry": true,
+    "oGrid": true,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "oGrid": true,
+      "exactSymmetry": true,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.008,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 696,
+      "quads": 600,
+      "triangles": 96
+    },
+    "qualityPassed": true,
+    "qualitySummary": "Elements: 600 quads, 96 triangles. Outside shape references: 16 (0.721% of area). Size exceptions: 0 elements (0% of area). Invalid: 0."
+  },
+  {
+    "id": "nTEST034-symmetry",
+    "sourceModel": "examples/atomic/models/nTEST034.sdb",
+    "selectedAreas": [
+      "2"
+    ],
+    "selectedPoints": [
+      "4",
+      "28",
+      "39",
+      "50",
+      "61",
+      "72",
+      "83",
+      "94",
+      "105",
+      "116",
+      "3",
+      "6",
+      "126",
+      "194",
+      "229",
+      "264",
+      "299",
+      "334",
+      "369",
+      "404",
+      "439",
+      "474",
+      "509",
+      "544",
+      "579",
+      "614",
+      "649",
+      "684",
+      "719",
+      "754",
+      "789",
+      "824",
+      "859",
+      "894",
+      "929",
+      "964",
+      "999",
+      "1034",
+      "1069",
+      "1104",
+      "1139",
+      "1174",
+      "1209",
+      "1244",
+      "1279",
+      "5"
+    ],
+    "selectedFrames": [],
+    "profileFromV1Manifest": "Reinforced Concrete",
+    "presentLengthUnit": "m",
+    "maximumSize": 0.1,
+    "fast": true,
+    "circularGroup": null,
+    "holeDiameter": null,
+    "exactSymmetry": true,
+    "oGrid": false,
+    "actualGmshSettings": {
+      "algorithm": 8,
+      "recombine": true,
+      "recombination": 0,
+      "optimize": false,
+      "optimizeMethod": "Laplace2D",
+      "optimizeIterations": 1,
+      "smoothing": 1,
+      "qualityTolerancePercent": 20,
+      "preserveSelectedEdges": false,
+      "oGrid": false,
+      "exactSymmetry": true,
+      "structured": {
+        "mode": "unstructured",
+        "nodes": 5,
+        "distribution": "Progression",
+        "coefficient": 1,
+        "arrangement": "Left",
+        "cornerAngle": 2.356194490192345
+      },
+      "localField": null,
+      "fieldGraph": null,
+      "options": {
+        "Mesh.MeshSizeMin": 0.08,
+        "Mesh.MeshSizeFactor": 1,
+        "Mesh.SubdivisionAlgorithm": 0,
+        "Mesh.AlgorithmSwitchOnFailure": 0
+      }
+    },
+    "generated": {
+      "areas": 1440,
+      "quads": 1404,
+      "triangles": 36
+    },
+    "qualityPassed": false,
+    "qualitySummary": "Elements: 148 quads, 36 triangles. Outside shape references: 6 (0.837% of area). Size exceptions: 4 elements (3.058% of area). Invalid: 0."
+  }
+]

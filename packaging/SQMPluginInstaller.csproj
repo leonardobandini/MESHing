@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>SQMPluginInstaller</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="SQMPluginInstaller.cs" />
+  </ItemGroup>
+</Project>

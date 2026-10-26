@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="280" viewBox="0 0 720 280" role="img" aria-label="An original SAP2000 area with selected joints and frames, followed by a conforming Gmsh shell mesh">
+<rect width="720" height="280" fill="#fff"/><g font-family="Segoe UI,Arial" font-size="15" fill="#18314f"><text x="52" y="31">SAP2000 · input</text><text x="393" y="31">Gmsh · conforming shell mesh</text></g>
+<path d="M50 55H315V240H50Z" fill="#eff5fc" stroke="#1f4481" stroke-width="3"/>
+<path d="M50 148H315" fill="none" stroke="#e17725" stroke-width="4"/><circle cx="130" cy="148" r="6" fill="#7542ac"/><circle cx="235" cy="148" r="6" fill="#7542ac"/>
+<g fill="#e9f2fb" stroke="#466785" stroke-width="1.6"><path d="M390 55H650V240H390Z"/><path d="M390 55V240M442 55V240M494 55V240M546 55V240M598 55V240M650 55V240M390 55H650M390 102H650M390 148H650M390 194H650M390 240H650"/></g>
+<path d="M390 148H650" stroke="#d76b1a" stroke-width="3"/><g fill="#7542ac"><circle cx="442" cy="148" r="5"/><circle cx="546" cy="148" r="5"/></g>
+<g font-family="Segoe UI,Arial" font-size="12" fill="#52627b"><text x="85" y="267">Purple: selected SAP2000 joints · Orange: selected frame</text><text x="425" y="267">The resulting shells share frame edges and selected joints</text></g></svg>

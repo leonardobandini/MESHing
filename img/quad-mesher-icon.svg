@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="MESHing: quadrilateral mesh with constrained node">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="51" fill="#0f172a"/>
+  <path d="M43 50 203 43 213 201 53 210Z" fill="url(#tile)" stroke="#93c5fd" stroke-width="7" stroke-linejoin="round"/>
+  <path d="M47 105 207 98M50 157 210 151M96 48 104 206M151 45 159 204" fill="none" stroke="#e0f2fe" stroke-width="6" stroke-linecap="round"/>
+  <path d="M151 98 207 98 210 151 158 152Z" fill="#0f172a" stroke="#e0f2fe" stroke-width="6"/>
+  <circle cx="183" cy="125" r="21" fill="none" stroke="#f97316" stroke-width="8"/>
+  <circle cx="47" cy="105" r="10" fill="#f97316" stroke="#fff7ed" stroke-width="3"/>
+  <circle cx="104" cy="157" r="10" fill="#f97316" stroke="#fff7ed" stroke-width="3"/>
+  <circle cx="159" cy="204" r="10" fill="#f97316" stroke="#fff7ed" stroke-width="3"/>
+</svg>

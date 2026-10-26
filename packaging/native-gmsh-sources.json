@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "wheel": "gmsh-4.15.2-py2.py3-none-win_amd64.whl",
+  "gmshDllSha256": "6cac3eefb477265d9fa60bbd869dbbbf7c7ca4cb308c0f8f2b43e91d43de3c1c",
+  "note": "Versions in General.BuildInfo and binary strings; these upstream source archives do not by themselves certify the exact build provenance of the official Gmsh Windows wheel.",
+  "components": [
+    {
+      "name": "Open CASCADE Technology",
+      "version": "7.8.1",
+      "archive": "occt-7.8.1-source.tar.gz",
+      "url": "https://codeload.github.com/Open-Cascade-SAS/OCCT/tar.gz/bd2a789f15235755ce4d1a3b07379a2e062fdc2e",
+      "sha256": "f3aa3f8b80930414ecad4cc39b5c885afba3e69b70c5d856de3ae9ff677b4469",
+      "licenseFiles": {
+        "LICENSE_LGPL_21.txt": "OCCT-LGPL-2.1.txt",
+        "OCCT_LGPL_EXCEPTION.txt": "OCCT-LGPL-EXCEPTION.txt"
+      }
+    },
+    {
+      "name": "FLTK",
+      "version": "1.3.11",
+      "archive": "fltk-1.3.11-source.tar.gz",
+      "url": "https://codeload.github.com/fltk/fltk/tar.gz/702172a951a2bb4f25afe31008ef3fcbb5bfb92f",
+      "sha256": "8f2b468d2998c8a8a1283486a59ed9c09aa9cade868575f174ce125234727713",
+      "licenseFiles": {
+        "COPYING": "FLTK-LICENSE.txt"
+      }
+    },
+    {
+      "name": "MED file library",
+      "version": "4.1.0",
+      "archive": "med-4.1.0-source.tar.gz",
+      "url": "https://src.fedoraproject.org/lookaside/pkgs/med/med-4.1.0.tar.gz/sha512/94d07663c2f6a3cd497f54b480c3d742476d2a25172feb567980c9e75d49f4661aa2c6aaf570470938265997154e348bc1608065b86d42afda52d4e6361fedf8/med-4.1.0.tar.gz",
+      "sha256": "847db5d6fbc9ce6924cb4aea86362812c9a5ef6b9684377e4dd6879627651fce",
+      "sha512": "94d07663c2f6a3cd497f54b480c3d742476d2a25172feb567980c9e75d49f4661aa2c6aaf570470938265997154e348bc1608065b86d42afda52d4e6361fedf8",
+      "licenseFiles": {
+        "COPYING.LESSER": "MED-LGPL-3.0.txt",
+        "COPYING": "MED-GPL-3.0.txt"
+      }
+    },
+    {
+      "name": "MMG",
+      "version": "5.5.2",
+      "evidence": "MODULE MMG3D: 5.5.2 (Nov. 17, 2020) printed by the bundled official Gmsh DLL during isolated in-memory 3D meshing with Mesh.Algorithm3D=7",
+      "archive": "mmg-5.5.2-source.tar.gz",
+      "url": "https://codeload.github.com/MmgTools/mmg/tar.gz/379209a9bb9b52df5e7a6ca08ae366bf1991960f",
+      "sha256": "3078a4e281640ae927223d449d37dfb63e0a7afc8ed737fc075eb6e255269a65",
+      "licenseFiles": {
+        "LICENSE": "MMG-LICENSE.txt",
+        "COPYING.LESSER": "MMG-LGPL-3.0.txt"
+      }
+    }
+  ],
+  "noticeOnly": [
+    {
+      "component": "CGNS; binary build revision not identified",
+      "reference": "CGNS v4.4.0 license; not asserted to be matching source",
+      "url": "https://raw.githubusercontent.com/CGNS/CGNS/v4.4.0/license.txt",
+      "cached": "cgns-license-reference.txt",
+      "sha256": "8f3f0ca6bfcd88d7e43d85e4d715132bddce11177f7f6c8f122e42b0493b36c4",
+      "staged": "CGNS-LICENSE.txt"
+    },
+    {
+      "component": "PETSc 3.15.0; permissive notice, no duplicate source asset",
+      "reference": "Original PETSc 3.15.0 license",
+      "url": "https://raw.githubusercontent.com/petsc/petsc/v3.15.0/LICENSE",
+      "cached": "petsc-license-reference.txt",
+      "sha256": "025a087c586f27a96891472934df6e17f151d66ec22ac03d877b28d2aa14d3b5",
+      "staged": "PETSC-LICENSE.txt"
+    },
+    {
+      "component": "HDF5 1.10.5; permissive notices, no duplicate source asset",
+      "reference": "HDF Group 1.10.5 copyright and license",
+      "url": "https://raw.githubusercontent.com/HDFGroup/hdf5/hdf5-1_10_5/COPYING",
+      "cached": "hdf5-license-reference.txt",
+      "sha256": "1001425406c6f36ba30f7ac863c4b44a0355dfd5a0a0cf71e1f27201193a3f1e",
+      "staged": "HDF5-LICENSE.txt"
+    },
+    {
+      "component": "HDF5 1.10.5; LBNL notice",
+      "reference": "HDF Group 1.10.5 LBNL copyright and license",
+      "url": "https://raw.githubusercontent.com/HDFGroup/hdf5/hdf5-1_10_5/COPYING_LBNL_HDF5",
+      "cached": "hdf5-lbnl-license-reference.txt",
+      "sha256": "d4137959869a84cba20c78fc0cd5b3f42a0cd22bb637b129e9a2d426c4b315d9",
+      "staged": "HDF5-LBNL-LICENSE.txt"
+    }
+  ]
+}

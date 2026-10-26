@@ -1,0 +1,40 @@
+# Build outputs
+**/bin/
+**/obj/
+artifacts/
+packages/
+packaging/build/
+packaging/dist/
+packaging/build-v2/
+packaging/dist-v2/
+packaging/cache/
+
+# Python caches and virtual environments
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE and user settings
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Generated binaries and COM registration output
+*.dll
+*.exe
+*.pdb
+*.tlb
+*.deps.json
+*.runtimeconfig.json
+
+# SAP2000 transient companion and lock files
+*.ico
+!img/MESHing.ico
+*.tmp
+*.log
+
+# OS files
+Thumbs.db
+.DS_Store

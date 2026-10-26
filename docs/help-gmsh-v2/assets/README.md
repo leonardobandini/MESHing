@@ -1,0 +1,1 @@
+SVG e `examples.json` sono ricavati **solo** da modelli SAP2000 verificati con la V2. Per riprodurli: compilare `RunTest01Fast.csproj`, eseguire `tools/RunGmshV2Examples.ps1` su copie in `%TEMP%\opencode`, quindi usare `tools/BuildGmshV2HelpExamples.py` sui percorsi restituiti. I diagrammi della V1 non sono sostituti dei risultati V2.

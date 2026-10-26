@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <Sap2000InstallDir Condition="'$(Sap2000InstallDir)' == ''">C:\Program Files\Computers and Structures\SAP2000 27</Sap2000InstallDir>
+    <CSiBridgeInstallDir Condition="'$(CSiBridgeInstallDir)' == ''">C:\Program Files\Computers and Structures\CSiBridge 27</CSiBridgeInstallDir>
+    <Sap2000ApiPath Condition="'$(Sap2000ApiPath)' == ''">$(Sap2000InstallDir)\SAP2000v1.dll</Sap2000ApiPath>
+    <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+  <Target Name="ValidateSap2000Api" BeforeTargets="ResolveAssemblyReferences" Condition="'$(MSBuildProjectName)' != 'SapGmshReplacement' and '$(MSBuildProjectName)' != 'SQMV2Installer' and !Exists('$(Sap2000ApiPath)')">
+    <Error Text="SAP2000v1.dll non trovata in '$(Sap2000ApiPath)'. Impostare Sap2000InstallDir o Sap2000ApiPath." />
+  </Target>
+</Project>

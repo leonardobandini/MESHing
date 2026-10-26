@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>7.3</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="TrialSnapshotUndo.cs" />
+    <Reference Include="CSiAPIv1"><HintPath>$(Sap2000InstallDir)\CSiAPIv1.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+</Project>

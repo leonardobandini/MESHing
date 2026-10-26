@@ -1,0 +1,56 @@
+name: Keep latest MESHing installer link current
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published MESHing release tag
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  latest-installer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify and attach the stable installer asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          test "$TAG" = "v$version"
+          archive="MESHing-$version.zip"
+          checksum="$archive.sha256"
+          directory="$RUNNER_TEMP/meshing-latest"
+          mkdir -p "$directory"
+
+          # The published event can arrive while GitHub CLI is still uploading
+          # release assets. Wait until both versioned files become available.
+          for attempt in $(seq 1 30); do
+            if gh release download "$TAG" -p "$archive" -p "$checksum" -D "$directory" --clobber; then
+              break
+            fi
+            sleep 10
+          done
+          test -s "$directory/$archive"
+          test -s "$directory/$checksum"
+          (cd "$directory" && sha256sum -c "$checksum")
+          expected="sha256:$(sha256sum "$directory/$archive" | cut -d ' ' -f 1)"
+
+          for alias in MESHing-latest.zip; do
+            current="$(gh api "repos/$GH_REPO/releases/tags/$TAG" \
+              --jq ".assets[] | select(.name == \"$alias\") | .digest")"
+            if [ -n "$current" ]; then
+              test "$current" = "$expected"
+            else
+              cp "$directory/$archive" "$directory/$alias"
+              gh release upload "$TAG" "$directory/$alias"
+            fi
+            actual="$(gh api "repos/$GH_REPO/releases/tags/$TAG" \
+              --jq ".assets[] | select(.name == \"$alias\") | .digest")"
+            test "$actual" = "$expected"
+          done

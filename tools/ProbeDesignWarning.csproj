@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net48</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ProbeDesignWarning.cs" />
+    <Reference Include="CSiAPIv1"><HintPath>$(Sap2000InstallDir)\CSiAPIv1.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+</Project>

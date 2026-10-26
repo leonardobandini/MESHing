@@ -1,0 +1,32 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+<rect width="1200" height="720" rx="20" fill="#f8fafc"/>
+<rect x="24" y="18" width="1152" height="66" rx="14" fill="#0f172a"/>
+<text x="52" y="59" font-family="Segoe UI,Arial" font-size="27" font-weight="700" fill="white">Source geometry</text>
+<text x="1145" y="57" text-anchor="end" font-family="Segoe UI,Arial" font-size="16" fill="#cbd5e1">shells 1  |  nodes 8  |  frames 4</text>
+<polygon points="322.5,660 877.5,660 877.5,105 322.5,105" fill="#bae6fd" fill-opacity="0.72" stroke="#2563eb" stroke-width="1.2" stroke-linejoin="round"/>
+<line x1="516.75" y1="479.625" x2="697.125" y2="465.75" stroke="#ea580c" stroke-width="4" stroke-linecap="round"/>
+<text x="612.938" y="466.688" font-family="Segoe UI,Arial" font-size="14" font-weight="700" fill="#9a3412">F1</text>
+<line x1="697.125" y1="465.75" x2="683.25" y2="285.375" stroke="#ea580c" stroke-width="4" stroke-linecap="round"/>
+<text x="696.188" y="369.563" font-family="Segoe UI,Arial" font-size="14" font-weight="700" fill="#9a3412">F2</text>
+<line x1="683.25" y1="285.375" x2="502.875" y2="299.25" stroke="#ea580c" stroke-width="4" stroke-linecap="round"/>
+<text x="599.063" y="286.313" font-family="Segoe UI,Arial" font-size="14" font-weight="700" fill="#9a3412">F3</text>
+<line x1="502.875" y1="299.25" x2="516.75" y2="479.625" stroke="#ea580c" stroke-width="4" stroke-linecap="round"/>
+<text x="515.813" y="383.438" font-family="Segoe UI,Arial" font-size="14" font-weight="700" fill="#9a3412">F4</text>
+<circle cx="322.5" cy="660" r="3.4" fill="#0f172a" stroke="white" stroke-width="0.8"/>
+<text x="329.5" y="653" font-family="Segoe UI,Arial" font-size="13" fill="#334155">1</text>
+<circle cx="877.5" cy="660" r="3.4" fill="#0f172a" stroke="white" stroke-width="0.8"/>
+<text x="884.5" y="653" font-family="Segoe UI,Arial" font-size="13" fill="#334155">2</text>
+<circle cx="877.5" cy="105" r="3.4" fill="#0f172a" stroke="white" stroke-width="0.8"/>
+<text x="884.5" y="98" font-family="Segoe UI,Arial" font-size="13" fill="#334155">3</text>
+<circle cx="322.5" cy="105" r="3.4" fill="#0f172a" stroke="white" stroke-width="0.8"/>
+<text x="329.5" y="98" font-family="Segoe UI,Arial" font-size="13" fill="#334155">4</text>
+<circle cx="516.75" cy="479.625" r="3.4" fill="#0f172a" stroke="white" stroke-width="0.8"/>
+<text x="523.75" y="472.625" font-family="Segoe UI,Arial" font-size="13" fill="#334155">5</text>
+<circle cx="697.125" cy="465.75" r="3.4" fill="#0f172a" stroke="white" stroke-width="0.8"/>
+<text x="704.125" y="458.75" font-family="Segoe UI,Arial" font-size="13" fill="#334155">6</text>
+<circle cx="683.25" cy="285.375" r="3.4" fill="#0f172a" stroke="white" stroke-width="0.8"/>
+<text x="690.25" y="278.375" font-family="Segoe UI,Arial" font-size="13" fill="#334155">7</text>
+<circle cx="502.875" cy="299.25" r="3.4" fill="#0f172a" stroke="white" stroke-width="0.8"/>
+<text x="509.875" y="292.25" font-family="Segoe UI,Arial" font-size="13" fill="#334155">8</text>
+<g font-family="Segoe UI,Arial" font-size="14" fill="#334155"><circle cx="72" cy="686" r="4" fill="#0f172a"/><text x="84" y="691">SAP2000 node</text><circle cx="190" cy="686" r="5" fill="#7c3aed"/><text x="203" y="691">selected node</text><line x1="330" y1="686" x2="365" y2="686" stroke="#ea580c" stroke-width="4"/><text x="376" y="691">frame</text><rect x="455" y="679" width="28" height="14" fill="#dbeafe" stroke="#2563eb"/><text x="493" y="691">shell</text></g>
+</svg>
