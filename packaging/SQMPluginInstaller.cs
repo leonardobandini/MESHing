@@ -24,23 +24,33 @@ internal static class SQMPluginInstaller
     private const string MenuText = "MESHing";
     private const string VisualCppDownload = "https://aka.ms/vc14/vc_redist.x64.exe";
     private const string VisualCppRegistryKey = @"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64";
+    private const string UninstallRegistryKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
     private static readonly Version MinimumVisualCppVersion = new Version(14, 42, 34226, 3);
+
+    private sealed class HostInstallation
+    {
+        internal string Product;
+        internal int Version;
+        internal string Directory;
+    }
 
     private static int Main(string[] args)
     {
         try
         {
-            if (args.Length < 1 || args.Length > 3 ||
+            if (args.Length < 1 || args.Length > 4 ||
                   (args[0] != "install" && args[0] != "uninstall" && args[0] != "verify" &&
                     args[0] != "test-install" && args[0] != "test-menu" &&
-                    args[0] != "test-menu-bridge" && args[0] != "test-hosts") ||
+                    args[0] != "test-menu-bridge" && args[0] != "test-hosts" &&
+                    args[0] != "test-hosts-registry") ||
                  ((args[0] == "test-install" || args[0] == "test-menu" ||
                    args[0] == "test-menu-bridge") && args.Length != 2) ||
-                 (args[0] == "test-hosts" && args.Length != 3) ||
-                 (args[0] != "test-hosts" && args.Length > 2))
-                 throw new ArgumentException("Usage: SQMPluginInstaller.exe install|uninstall|verify [package directory], test-install TEST_ROOT, test-menu[-bridge] TEMP_PROFILE or test-hosts TEMP_INSTALL_ROOT TEMP_PROFILE_ROOT");
+                  (args[0] == "test-hosts" && args.Length != 3) ||
+                  (args[0] == "test-hosts-registry" && args.Length != 4) ||
+                  (args[0] != "test-hosts" && args[0] != "test-hosts-registry" && args.Length > 2))
+                  throw new ArgumentException("Usage: SQMPluginInstaller.exe install|uninstall|verify [package directory], test-install TEST_ROOT, test-menu[-bridge] TEMP_PROFILE or test-hosts[-registry] TEMP_INSTALL_ROOT TEMP_PROFILE_ROOT [TEMP_REGISTRY_FIXTURE]");
 
-            if (args[0] == "test-hosts")
+            if (args[0] == "test-hosts" || args[0] == "test-hosts-registry")
             {
                 string installs = Path.GetFullPath(args[1]), profiles = Path.GetFullPath(args[2]);
                 string temp = Path.GetFullPath(Path.GetTempPath()).TrimEnd('\\') + "\\";
@@ -49,7 +59,24 @@ internal static class SQMPluginInstaller
                     string.Equals(installs, profiles, StringComparison.OrdinalIgnoreCase) ||
                     !Directory.Exists(installs) || !Directory.Exists(profiles))
                     throw new ArgumentException("Host discovery tests require distinct existing temporary directories.");
-                UpdateInstalledHostMenus(installs, profiles);
+                var registered = new System.Collections.Generic.List<HostInstallation>();
+                if (args[0] == "test-hosts-registry")
+                {
+                    string fixture = Path.GetFullPath(args[3]);
+                    if (!fixture.StartsWith(temp, StringComparison.OrdinalIgnoreCase) || !File.Exists(fixture))
+                        throw new ArgumentException("Registry fixture must be an existing temporary file.");
+                    foreach (string line in File.ReadAllLines(fixture))
+                    {
+                        int separator = line.IndexOf('|');
+                        if (separator < 0) throw new InvalidDataException("Invalid registry host fixture.");
+                        HostInstallation host = HostFromNameAndPath(line.Substring(0, separator),
+                            line.Substring(separator + 1));
+                        if (host == null || !host.Directory.StartsWith(temp, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidDataException("Registry fixture host must be inside the temporary directory.");
+                        registered.Add(host);
+                    }
+                }
+                UpdateInstalledHostMenus(installs, profiles, registered);
                 return 0;
             }
 
@@ -386,7 +413,8 @@ internal static class SQMPluginInstaller
     {
         bool sapMenuAvailable = UpdateInstalledHostMenus(
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Computers and Structures"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Computers and Structures"));
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Computers and Structures"),
+            RegisteredHostInstallations());
         // ETABS is deliberately excluded from the distributed installer.
 #if GMSH_V2
         // Retire the known development preview only after the SAP Tools entry is usable.
@@ -399,34 +427,98 @@ internal static class SQMPluginInstaller
 #endif
     }
 
-    private static bool UpdateInstalledHostMenus(string installationRoot, string profileRoot)
+    private static HostInstallation HostFromNameAndPath(string name, string location)
     {
-        if (!Directory.Exists(installationRoot)) return false;
-        bool sapMenuAvailable = false;
-        foreach (string directory in Directory.GetDirectories(installationRoot).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        Match match = Regex.Match(name ?? "", @"^(SAP2000|CSiBridge) (?<version>\d+)(?:\.\d+)*$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        int version;
+        if (!match.Success || !int.TryParse(match.Groups["version"].Value, out version) ||
+            version < 27 || string.IsNullOrWhiteSpace(location)) return null;
+        string directory;
+        try
         {
-            Match host = Regex.Match(Path.GetFileName(directory), @"^(SAP2000|CSiBridge) (?<version>\d+)$",
-                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-            int version;
-            if (!host.Success || !int.TryParse(host.Groups["version"].Value, out version) || version < 27) continue;
-            string product = host.Groups[1].Value.Equals("SAP2000", StringComparison.OrdinalIgnoreCase)
-                ? "SAP2000" : "CSiBridge";
-            if (!File.Exists(Path.Combine(directory, product + ".exe")) ||
-                !File.Exists(Path.Combine(directory, "CSiAPIv1.dll"))) continue;
-            string profile = Path.Combine(profileRoot, product + " " + version);
+            string candidate = location.Trim().Trim('"');
+            if (!Path.IsPathRooted(candidate)) return null;
+            directory = Path.GetFullPath(candidate);
+        }
+        catch (Exception error) when (error is ArgumentException || error is NotSupportedException ||
+                                      error is PathTooLongException) { return null; }
+        return new HostInstallation {
+            Product = match.Groups[1].Value.Equals("SAP2000", StringComparison.OrdinalIgnoreCase) ? "SAP2000" : "CSiBridge",
+            Version = version,
+            Directory = directory
+        };
+    }
+
+    private static System.Collections.Generic.List<HostInstallation> RegisteredHostInstallations()
+    {
+        var hosts = new System.Collections.Generic.List<HostInstallation>();
+        foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+        {
             try
             {
-                bool available = product == "SAP2000" ? UpdateSapMenu(profile, version) :
-                    UpdateBridgeMenu(profile, version);
-                if (product == "SAP2000" && available) sapMenuAvailable = true;
+                using (RegistryKey machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view))
+                using (RegistryKey uninstall = machine.OpenSubKey(UninstallRegistryKey))
+                {
+                    if (uninstall == null) continue;
+                    foreach (string subkey in uninstall.GetSubKeyNames())
+                    using (RegistryKey entry = uninstall.OpenSubKey(subkey))
+                    {
+                        if (entry == null) continue;
+                        HostInstallation host = HostFromNameAndPath(
+                            Convert.ToString(entry.GetValue("DisplayName")),
+                            Convert.ToString(entry.GetValue("InstallLocation")));
+                        if (host != null) hosts.Add(host);
+                    }
+                }
             }
-            catch (Exception error) when (error is IOException || error is UnauthorizedAccessException ||
-                                          error is InvalidDataException || error is XmlException)
+            catch (Exception error) when (error is UnauthorizedAccessException ||
+                                           error is System.Security.SecurityException || error is IOException)
             {
-                Console.WriteLine(product + " " + version + " MESHing menu could not be updated automatically: " + error.Message);
-                Console.WriteLine("In " + product + " use Tools > Add/Show Plugins to add " + MenuName + " manually.");
+                Console.WriteLine("Cannot read the installed host locations from the Windows registry: " + error.Message);
             }
         }
+        return hosts;
+    }
+
+    private static bool UpdateInstalledHostMenus(string installationRoot, string profileRoot,
+        System.Collections.Generic.IEnumerable<HostInstallation> registered)
+    {
+        var hosts = new System.Collections.Generic.List<HostInstallation>(registered);
+        if (Directory.Exists(installationRoot))
+        {
+            foreach (string directory in Directory.GetDirectories(installationRoot)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                HostInstallation host = HostFromNameAndPath(Path.GetFileName(directory), directory);
+                if (host != null) hosts.Add(host);
+            }
+        }
+        bool sapMenuAvailable = false;
+        bool found = false;
+        var processed = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (HostInstallation host in hosts)
+        {
+            if (!File.Exists(Path.Combine(host.Directory, host.Product + ".exe")) ||
+                !File.Exists(Path.Combine(host.Directory, "CSiAPIv1.dll")) ||
+                !processed.Add(host.Product + " " + host.Version)) continue;
+            found = true;
+            string profile = Path.Combine(profileRoot, host.Product + " " + host.Version);
+            try
+            {
+                bool available = host.Product == "SAP2000" ? UpdateSapMenu(profile, host.Version) :
+                    UpdateBridgeMenu(profile, host.Version);
+                if (host.Product == "SAP2000" && available) sapMenuAvailable = true;
+            }
+            catch (Exception error) when (error is IOException || error is UnauthorizedAccessException ||
+                                           error is InvalidDataException || error is XmlException)
+            {
+                Console.WriteLine(host.Product + " " + host.Version + " MESHing menu could not be updated automatically: " + error.Message);
+                Console.WriteLine("In " + host.Product + " use Tools > Add/Show Plugins to add " + MenuName + " manually.");
+            }
+        }
+        if (!found) Console.WriteLine("No SAP2000 or CSiBridge 27+ installation could be located automatically. " +
+            "Check its Windows InstallLocation, or add " + MenuName + " using Tools > Add/Show Plugins.");
         return sapMenuAvailable;
     }
 

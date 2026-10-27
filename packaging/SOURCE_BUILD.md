@@ -38,7 +38,7 @@ foreach ($name in @('occt-7.8.1', 'fltk-1.3.11', 'med-4.1.0')) {
     Copy-Item -LiteralPath "third_party\native-sources\$name-source.tar.gz" -Destination "packaging\cache\$name-source.tar.gz"
 }
 powershell -NoProfile -ExecutionPolicy Bypass -File packaging\build-release-v2.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File packaging\PrepareV300Candidate.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File packaging\PrepareV301Candidate.ps1
 ```
 
 The release script compiles `SapQuadTransitionPlugin/SapGmshReplacement.csproj`
@@ -60,11 +60,12 @@ revision exposed by the unmodified official Gmsh wheel;
 neither the sources nor this script claim a bit-for-bit rebuild of that wheel.
 `-SkipBackendBuild` reuses a previously built frozen backend.
 
-`PrepareV300Candidate.ps1` creates `artifacts/candidate-v3.0.0/` with only ten
-MESHing assets. Its `MESHing-latest.zip` is copied byte-for-byte from the
-versioned installer; this local alias does not modify any published release.
+`PrepareV301Candidate.ps1` creates `artifacts/candidate-v3.0.1/` with only ten
+MESHing assets. During local assembly, `MESHing-latest.zip` is copied byte-for-byte
+from the versioned installer. Once published, the `latest` download link follows
+the latest stable release and may differ from this versioned ZIP in the future.
 Older preparation scripts remain in the source archive solely as historical
-material and do not run when building MESHing 3.0.0.
+material and do not run when building MESHing 3.0.1.
 
 The source build uses the pinned official Python 3.12.7 runtime. Its separate
 source is available at https://www.python.org/downloads/release/python-3127/ ;

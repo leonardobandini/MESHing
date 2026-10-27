@@ -1,5 +1,11 @@
 # MESHing — changelog
 
+## MESHing 3.0.1 — rilevamento delle installazioni non standard
+
+- L'installer individua SAP2000 e CSiBridge 27+ anche quando Windows ne registra un percorso `InstallLocation` diverso da `Program Files`; verifica eseguibile e API prima di aggiornare i menu nei profili già inizializzati.
+- La ricerca nella cartella standard rimane disponibile; se non trova alcun host compatibile, l'installer lo segnala invece di omettere silenziosamente la registrazione del menu. Il motore di mesh e l'identità COM restano invariati.
+- L'utente ha confermato una prova riuscita con SAP2000 installato in un percorso non standard. Per CSiBridge nello stesso scenario sono disponibili soltanto prove su installazioni e profili simulati.
+
 ## MESHing 3.0.0 — prima release con il nuovo nome
 
 - Nuova identità pubblica MESHing e installer con una sola voce di menu MESHing; l'identità COM tecnica FEMesh resta compatibile con le installazioni SAP2000 e CSiBridge già esistenti.

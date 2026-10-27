@@ -88,6 +88,65 @@ try{
             "MESHING_HOST_MENU=$product $version PASS TWO_INSTALLS=YES"
         }
     }
+    # Real installer installs can live anywhere: the Windows uninstall entry's
+    # InstallLocation, not the folder name or Program Files root, identifies them.
+    $emptyRoot=Join-Path $trial 'empty-standard-location'
+    $vendorRoot=Join-Path $trial 'vendor-specific custom location'
+    $customProfiles=Join-Path $trial 'custom-profiles'
+    New-Item -ItemType Directory -Path $emptyRoot,$vendorRoot,$customProfiles|Out-Null
+    $registered=@()
+    foreach($product in @('SAP2000','CSiBridge')){
+        $custom=Join-Path $vendorRoot ($product+'-not-named-like-the-version')
+        $profile=Join-Path $customProfiles ($product+' 27')
+        New-Item -ItemType Directory -Path $custom,$profile|Out-Null
+        [IO.File]::WriteAllBytes((Join-Path $custom ($product+'.exe')),[byte[]]@(1))
+        [IO.File]::WriteAllBytes((Join-Path $custom 'CSiAPIv1.dll'),[byte[]]@(1))
+        $live=Join-Path $env:LOCALAPPDATA ('Computers and Structures\'+$product+' 27')
+        foreach($suffix in @('ini','settings')){
+            Copy-Item -LiteralPath (Join-Path $live ($product+'v27.'+$suffix)) -Destination $profile
+        }
+        $registered+=($product+' 27.1|'+$custom)
+    }
+    $invalid=Join-Path $vendorRoot 'invalid-host-without-api'
+    New-Item -ItemType Directory -Path $invalid|Out-Null
+    [IO.File]::WriteAllBytes((Join-Path $invalid 'SAP2000.exe'),[byte[]]@(1))
+    $registered+=('SAP2000 28|'+$invalid)
+    $fixture=Join-Path $trial 'windows-uninstall-locations.txt'
+    [IO.File]::WriteAllLines($fixture,$registered)
+    foreach($pass in 1..2){
+        $output=& $Installer test-hosts-registry $emptyRoot $customProfiles $fixture
+        if($LASTEXITCODE -ne 0){throw "Custom-path discovery failed on pass $pass."}
+        foreach($product in @('SAP2000','CSiBridge')){
+            if(-not(@($output|Where-Object {$_ -match ([regex]::Escape($product+' 27')+' Tools plugin menu ') }).Count)){
+                throw "No $product 27 custom-location menu on pass $pass."
+            }
+        }
+        if(@($output|Where-Object {$_ -match 'SAP2000 28 Tools plugin menu |No SAP2000 or CSiBridge 27\+'}).Count){
+            throw 'An invalid host was registered or valid custom hosts were not found.'
+        }
+    }
+    foreach($product in @('SAP2000','CSiBridge')){
+        $profile=Join-Path $customProfiles ($product+' 27')
+        $ini=[IO.File]::ReadAllText((Join-Path $profile ($product+'v27.ini')))
+        $section=[regex]::Match($ini,'(?ms)^\[PlugIn\]\r?\n.*?(?=^\[|\z)').Value
+        $names=[regex]::Matches($section,'(?m)^\s*PlugInName=([^\r\n]*)')
+        $labels=[regex]::Matches($section,'(?m)^\s*PlugInMenuText=([^\r\n]*)')
+        $count=[int]([regex]::Match($section,'(?m)^\s*NumberPlugIns=(\d+)').Groups[1].Value)
+        $matches=@(0..($names.Count-1)|Where-Object {$names[$_].Groups[1].Value.Trim() -eq 'SapQuadTransitionPlugin'})
+        if($count -ne $names.Count -or $names.Count -ne $labels.Count -or $matches.Count -ne 1 -or
+            $labels[$matches[0]].Groups[1].Value.Trim() -ne 'MESHing'){
+            throw "Custom $product menu is missing or duplicated."
+        }
+        [xml]$settings=Get-Content -LiteralPath (Join-Path $profile ($product+'v27.settings')) -Raw
+        [xml]$entries=$settings.Settings.PlugIn
+        $menus=@($entries.ArrayOfString.string|ForEach-Object {
+            [xml]$record=$_.TrimStart([char]0xfeff,[char]' ',[char]13,[char]10)
+            if($record.PlugIn.m_name -eq 'SapQuadTransitionPlugin' -and
+                $record.PlugIn.m_Text -eq 'MESHing' -and $record.PlugIn.m_Hide -eq 'false'){$record}
+        })
+        if($menus.Count -ne 1){throw "Custom $product settings have no visible MESHing entry."}
+        "MESHING_NONDEFAULT_HOST=$product 27 PASS TWO_INSTALLS=YES"
+    }
     foreach($file in $original.Keys){
         if((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $original[$file]){
             throw 'A live 27 host menu changed during isolated test.'
@@ -104,7 +163,7 @@ try{
     if(Test-Path -LiteralPath (Join-Path $profiles 'SAP2000 32')){
         throw 'Installer created an uninitialized future host profile.'
     }
-    'MESHING_HOST_DISCOVERY=PASS FUTURE=28,29,31 SAP_BRIDGE=YES ETABS=UNTOUCHED'
+    'MESHING_HOST_DISCOVERY=PASS FUTURE=28,29,31 NONDEFAULT_INSTALL=YES SAP_BRIDGE=YES ETABS=UNTOUCHED'
 }finally{
     if(Test-Path -LiteralPath $trial){Remove-Item -LiteralPath $trial -Recurse -Force}
 }

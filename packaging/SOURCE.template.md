@@ -1,16 +1,22 @@
 # Corresponding source for MESHing v{VERSION}
 
-The authoritative binary and corresponding-source files for this version are
-the assets of the **same** MESHing release:
+The fixed installer `MESHing-{VERSION}.zip` and its corresponding sources and
+checksums are assets of the **same** MESHing release:
 
 https://github.com/leonardobandini/MESHing/releases/tag/v{VERSION}
+
+`MESHing-latest.zip` is a moving link to the latest stable release. It initially
+matches the versioned installer when this release is the latest, but can change
+when a newer stable release is published. Its moving `.sha256` link verifies the
+currently downloaded alias; use the versioned ZIP and versioned checksum below
+to obtain the fixed binary corresponding to these sources.
 
 | Asset | Download |
 | --- | --- |
 | `MESHing-{VERSION}.zip` (installer) | https://github.com/leonardobandini/MESHing/releases/download/v{VERSION}/MESHing-{VERSION}.zip |
 | `MESHing-{VERSION}.zip.sha256` | https://github.com/leonardobandini/MESHing/releases/download/v{VERSION}/MESHing-{VERSION}.zip.sha256 |
-| `MESHing-latest.zip` (byte-identical convenience copy) | https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip |
-| `MESHing-latest.zip.sha256` | https://github.com/leonardobandini/MESHing/releases/download/v{VERSION}/MESHing-latest.zip.sha256 |
+| `MESHing-latest.zip` (moving latest-stable alias) | https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip |
+| `MESHing-latest.zip.sha256` (moving alias checksum) | https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip.sha256 |
 | `MESHing-{VERSION}-source.zip` (C# plug-in, Python backend, exact Gmsh Python binding, build and installation scripts) | https://github.com/leonardobandini/MESHing/releases/download/v{VERSION}/MESHing-{VERSION}-source.zip |
 | `MESHing-{VERSION}-source.zip.sha256` | https://github.com/leonardobandini/MESHing/releases/download/v{VERSION}/MESHing-{VERSION}-source.zip.sha256 |
 | `gmsh-4.15.2-source.tgz` (unmodified upstream Gmsh source) | https://github.com/leonardobandini/MESHing/releases/download/v{VERSION}/gmsh-4.15.2-source.tgz |
