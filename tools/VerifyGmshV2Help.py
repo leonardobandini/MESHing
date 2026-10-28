@@ -105,8 +105,8 @@ def main():
                 'alt="' + ('MESHing logo' if name.endswith('-en.html') else 'Logo MESHing') + '"' not in text):
             raise ValueError(name + ': missing MESHing help logo or accessible description')
         if 'in preparation' in text.lower() or 'in preparazione' in text.lower():
-            raise ValueError(name + ': prerelease label in the MESHing 3.0.1 help')
-        for marker in ((('MESHing version · 3.0.1' if name.endswith('-en.html') else 'Versione MESHing · 3.0.1'), 'leonardo@csi-italia.eu', 'Mesh.MeshSizeMin', 'Mesh.Smoothing', 'Mesh.AlgorithmSwitchOnFailure',
+            raise ValueError(name + ': prerelease label in the MESHing 3.0.2 help')
+        for marker in ((('MESHing version · 3.0.2' if name.endswith('-en.html') else 'Versione MESHing · 3.0.2'), 'leonardo@csi-italia.eu', 'Mesh.MeshSizeMin', 'Mesh.Smoothing', 'Mesh.AlgorithmSwitchOnFailure',
                           'https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist',
                           'https://gmsh.info/', 'C. Geuzaine', 'J.-F. Remacle',
                           'Gmsh attribution.' if name.endswith('-en.html') else 'Attribuzione Gmsh.',
@@ -115,7 +115,7 @@ def main():
                           'Mesh.QuadqsSizemapMethod', 'Mesh.RecombineNodeRepositioning',
                           'Mesh.RecombineOptimizeTopology',
                           'Prefer regular (grid-aligned) mesh when possible' if name.endswith('-en.html') else 'Preferisci mesh regolari allineate alla griglia',
-                           '<footer><small>Version: <strong>3.0.1</strong></small>' if name.endswith('-en.html') else '<footer><small>Versione: <strong>3.0.1</strong></small>',
+                            '<footer><small>Version: <strong>3.0.2</strong></small>' if name.endswith('-en.html') else '<footer><small>Versione: <strong>3.0.2</strong></small>',
                           'Additional options' if name.endswith('-en.html') else 'Opzioni aggiuntive',
                           'Transfer options' if name.endswith('-en.html') else 'Opzioni di trasferimento',
                           'Do not show this backup warning again' if name.endswith('-en.html') else 'Non mostrare più questo avviso sul backup',

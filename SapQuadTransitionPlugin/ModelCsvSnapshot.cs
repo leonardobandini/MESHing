@@ -1095,7 +1095,7 @@ namespace SapQuadTransitionPlugin
             {
                 int offset = row * table.Fields.Length;
                 double value;
-                if (!double.TryParse(table.Data[offset + temperature], NumberStyles.Float,
+                if (!double.TryParse(table.Data[offset + temperature].Replace(',', '.'), NumberStyles.Float,
                     CultureInfo.InvariantCulture, out value))
                     throw new InvalidDataException("Invalid area material temperature for " + table.Data[offset + area]);
                 string jointPattern = table.Data[offset + pattern];

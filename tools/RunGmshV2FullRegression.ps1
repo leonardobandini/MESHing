@@ -5,7 +5,7 @@ param([Parameter(Mandatory=$true)][string]$PluginPath,
        [ValidateRange(1,36)][int]$WorkerCount = 3,
        [string]$SapPids = '',
        [switch]$VerifyOnly,
-       [string]$InputModelDirectory = '', [string]$OutputSuffix = '',
+       [string]$InputModelDirectory = '', [string]$ManifestPath = '', [string]$OutputSuffix = '',
        [string]$ExpectedSapVersion = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -16,7 +16,9 @@ if (-not (Test-Path -LiteralPath $parent -PathType Container) -or
     -not (Test-Path -LiteralPath $PluginPath -PathType Leaf)) {
     throw 'The plugin or new temporary regression destination is unavailable.'
 }
-$manifest = @(Get-Content -LiteralPath (Join-Path $root 'examples\atomic\manifest.json') -Raw | ConvertFrom-Json)
+$manifestFile = if ($ManifestPath) { (Resolve-Path -LiteralPath $ManifestPath).Path }
+                else { Join-Path $root 'examples\atomic\manifest.json' }
+$manifest = @(Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json)
 $expected = @(1..36 | ForEach-Object { 'nTEST{0:D3}' -f $_ })
 $ids = @($manifest | ForEach-Object { $_.id })
 if ($ids.Count -ne 36 -or (@(Compare-Object $expected $ids)).Count) {
@@ -70,6 +72,7 @@ try {
         if ($InputModelDirectory) {
             $arguments += ' -InputModelDirectory "' + (Resolve-Path -LiteralPath $InputModelDirectory).Path + '"'
         }
+        $arguments += ' -ManifestPath "' + $manifestFile + '"'
         if ($OutputSuffix) { $arguments += ' -OutputSuffix "' + $OutputSuffix + '"' }
         if ($ExpectedSapVersion) { $arguments += ' -ExpectedSapVersion "' + $ExpectedSapVersion + '"' }
         $process = Start-Process powershell.exe -ArgumentList $arguments -PassThru `

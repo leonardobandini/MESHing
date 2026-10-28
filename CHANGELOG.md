@@ -1,5 +1,11 @@
 # MESHing — changelog
 
+## MESHing 3.0.2 — finestre delle impostazioni e formati numerici SAP2000/CSiBridge
+
+- I dialoghi modali delle impostazioni degli algoritmi di mesh e ottimizzazione restano davanti alla finestra principale fino a OK o Annulla; il blocco dell'host durante il dialogo è preservato.
+- I valori numerici nuovi inseriti nelle tabelle dell'host adottano il separatore decimale effettivo di Windows (punto o virgola), senza separatore delle migliaia. CSV e JSON scambiati con Gmsh rimangono invarianti. Il ripristino della temperatura dei materiali interpreta entrambi i separatori.
+- Con separatore decimale Windows `,`: matrice di generazione/Applica su copie **36/36 SAP2000 e 36/36 CSiBridge**, ripartita inizialmente su tre processi persistenti per host; `nTEST006` SAP, scaduto durante il salvataggio/diagramma con sei host concorrenti, è passato nella ripetizione dei casi 006–012. Prove Annulla dell'anteprima **3/3 per host** (001, 004, 014; FAST e Standard). Formattazione numerica verificata anche con `.`; tre dialoghi modali verificati con OK/Annulla.
+
 ## MESHing 3.0.1 — rilevamento delle installazioni non standard
 
 - L'installer individua SAP2000 e CSiBridge 27+ anche quando Windows ne registra un percorso `InstallLocation` diverso da `Program Files`; verifica eseguibile e API prima di aggiornare i menu nei profili già inizializzati.

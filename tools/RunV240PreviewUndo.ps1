@@ -3,7 +3,7 @@ param([Parameter(Mandatory=$true)][string]$Plugin,
       [Parameter(Mandatory=$true)][string]$ResultsRoot,
       [string[]]$Ids = @('nTEST001','nTEST002','nTEST010','nTEST012','nTEST033','nTEST035'),
       [ValidateRange(30, 240)][int]$TimeoutSeconds = 90,
-      [string]$InputModelDirectory = '', [string]$OutputSuffix = '',
+       [string]$InputModelDirectory = '', [string]$ManifestPath = '', [string]$OutputSuffix = '',
       [string]$ExpectedSapVersion = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -17,7 +17,9 @@ if (-not (Test-Path -LiteralPath $temp -PathType Container) -or
     -not (Test-Path -LiteralPath $Plugin -PathType Leaf) -or
     -not (Test-Path -LiteralPath $runner -PathType Leaf)) { throw 'Unsafe preview-Undo regression input.' }
 New-Item -ItemType Directory -Path $ResultsRoot | Out-Null
-$manifest = Get-Content -LiteralPath (Join-Path $root 'examples\atomic\manifest.json') -Raw | ConvertFrom-Json
+$manifestFile = if ($ManifestPath) { (Resolve-Path -LiteralPath $ManifestPath).Path }
+                else { Join-Path $root 'examples\atomic\manifest.json' }
+$manifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
 $previous = @($env:SAP_GMSH_V2_ATOMIC_EXAMPLES, $env:SAP_QUAD_ATOMIC_UNDO,
     $env:SAP_QUAD_ATOMIC_APPLY_BEFORE_UNDO, $env:SAP_GMSH_V2_SETTINGS_PATH)
 [Reflection.Assembly]::LoadFrom($runner) | Out-Null

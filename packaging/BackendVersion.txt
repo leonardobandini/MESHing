@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(3, 0, 1, 0),
-    prodvers=(3, 0, 1, 0),
+    filevers=(3, 0, 2, 0),
+    prodvers=(3, 0, 2, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -14,12 +14,12 @@ VSVersionInfo(
       StringTable('040904B0', [
         StringStruct('CompanyName', 'MESHing'),
         StringStruct('FileDescription', 'MESHing Gmsh meshing backend'),
-        StringStruct('FileVersion', '3.0.1.0'),
+        StringStruct('FileVersion', '3.0.2.0'),
         StringStruct('InternalName', 'SapQuadMesherBackend'),
         StringStruct('LegalCopyright', 'Copyright (C) 2026 Leonardo Bandini'),
         StringStruct('OriginalFilename', 'SapQuadMesherBackend.exe'),
         StringStruct('ProductName', 'MESHing'),
-        StringStruct('ProductVersion', '3.0.1.0')
+        StringStruct('ProductVersion', '3.0.2.0')
       ])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

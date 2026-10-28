@@ -696,10 +696,12 @@ namespace SapQuadTransitionPlugin
 
         private Form SettingsDialog(string title, int rows)
         {
-            var dialog = new Form { Text = title, Font = scroller.FindForm().Font, BackColor = Color.White,
-                ForeColor = scroller.FindForm().ForeColor, FormBorderStyle = FormBorderStyle.FixedDialog,
+            Form parent = scroller.FindForm();
+            var dialog = new Form { Text = title, Font = parent.Font, BackColor = Color.White,
+                ForeColor = parent.ForeColor, FormBorderStyle = FormBorderStyle.FixedDialog,
                 StartPosition = FormStartPosition.CenterParent, MinimizeBox = false, MaximizeBox = false,
-                ClientSize = new Size(550, 80 + 45 * rows), ShowInTaskbar = false };
+                ClientSize = new Size(550, 80 + 45 * rows), ShowInTaskbar = false,
+                TopMost = parent.TopMost };
             var body = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(16),
                 ColumnCount = 2, RowCount = rows + 1 };
             body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 53));

@@ -37,7 +37,7 @@ namespace SapQuadTransitionPlugin
         private const int AreaObjectType = 5;
         private const int SolidObjectType = 6;
         private const int LinkObjectType = 7;
-        private const string PluginVersion = "3.0.1";
+        private const string PluginVersion = "3.0.2";
         private const string WindowTitle = "MESHing " + PluginVersion;
         private const string UpdateManifestUrl = "https://api.github.com/repos/leonardobandini/MESHing/releases/latest";
         private const string LatestDownloadUrl = "https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip";
@@ -4294,6 +4294,7 @@ namespace SapQuadTransitionPlugin
             var operations = new List<MeshOperation>();
             string token = Guid.NewGuid().ToString("N").Substring(0, 8).ToUpperInvariant();
             int pointSequence = 1, areaSequence = 0;
+            string sapDecimal = SapTableDecimalSeparator();
 
             foreach (PreparedMesh item in prepared)
             {
@@ -4314,9 +4315,9 @@ namespace SapQuadTransitionPlugin
                         joints.Append(new Dictionary<string, string>
                         {
                             { "Joint", pointName }, { "CoordSys", "GLOBAL" }, { "CoordType", "Cartesian" },
-                            { "XorR", node.Value[0].ToString("R", CultureInfo.InvariantCulture) },
-                            { "Y", node.Value[1].ToString("R", CultureInfo.InvariantCulture) },
-                            { "T", "" }, { "Z", node.Value[2].ToString("R", CultureInfo.InvariantCulture) },
+                            { "XorR", FormatSapTableNumber(node.Value[0], sapDecimal) },
+                            { "Y", FormatSapTableNumber(node.Value[1], sapDecimal) },
+                            { "T", "" }, { "Z", FormatSapTableNumber(node.Value[2], sapDecimal) },
                             { "SpecialJt", "No" }, { "GUID", "" }
                         });
                     }
@@ -4507,6 +4508,7 @@ namespace SapQuadTransitionPlugin
                 var usedAreaNames = new HashSet<string>(areas.Values("Area"));
                 var meshPointNames = new Dictionary<int, string>();
                 int pointSequence = 1;
+                string sapDecimal = SapTableDecimalSeparator();
                 foreach (KeyValuePair<int, double[]> item in mesh.Nodes)
                 {
                     string pointName;
@@ -4521,9 +4523,9 @@ namespace SapQuadTransitionPlugin
                         joints.Append(new Dictionary<string, string>
                         {
                             { "Joint", pointName }, { "CoordSys", "GLOBAL" }, { "CoordType", "Cartesian" },
-                            { "XorR", item.Value[0].ToString("R", CultureInfo.InvariantCulture) },
-                            { "Y", item.Value[1].ToString("R", CultureInfo.InvariantCulture) },
-                            { "T", "" }, { "Z", item.Value[2].ToString("R", CultureInfo.InvariantCulture) },
+                            { "XorR", FormatSapTableNumber(item.Value[0], sapDecimal) },
+                            { "Y", FormatSapTableNumber(item.Value[1], sapDecimal) },
+                            { "T", "" }, { "Z", FormatSapTableNumber(item.Value[2], sapDecimal) },
                             { "SpecialJt", "No" }, { "GUID", "" }
                         });
                     }
@@ -5045,6 +5047,27 @@ namespace SapQuadTransitionPlugin
             return false;
         }
 
+
+        private static string SapTableDecimalSeparator()
+        {
+            var separator = new StringBuilder(8);
+            // SAP uses the Windows per-user decimal override, which need not
+            // match the .NET thread culture. Keep backend CSV/JSON invariant.
+            if (GetLocaleInfoEx(null, 0x0000000E, separator, separator.Capacity) == 0 ||
+                (separator.ToString() != "." && separator.ToString() != ","))
+                throw new InvalidOperationException("Cannot read the Windows decimal separator for SAP tables.");
+            return separator.ToString();
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetLocaleInfoEx(string localeName, uint localeType, StringBuilder value, int capacity);
+
+        private static string FormatSapTableNumber(double value, string separator)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value) || (separator != "." && separator != ","))
+                throw new InvalidDataException("Invalid SAP table number or decimal separator.");
+            return value.ToString("R", CultureInfo.InvariantCulture).Replace(".", separator);
+        }
 
         private static void WriteEditableTable(cSapModel model, EditableTable table)
         {
