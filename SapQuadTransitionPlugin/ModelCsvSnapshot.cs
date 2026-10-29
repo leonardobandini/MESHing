@@ -115,6 +115,15 @@ namespace SapQuadTransitionPlugin
             if (!string.IsNullOrEmpty(path)) File.AppendAllText(path, method + Environment.NewLine);
         }
 
+        private static void RecordUndoPhase(string phase, Stopwatch clock)
+        {
+            string line = "csv-undo-phase=" + phase + " seconds=" +
+                clock.Elapsed.TotalSeconds.ToString("R", CultureInfo.InvariantCulture);
+            Console.WriteLine(line);
+            string path = Environment.GetEnvironmentVariable("SAP_QUAD_UNDO_TRACE");
+            if (!string.IsNullOrEmpty(path)) File.AppendAllText(path, line + Environment.NewLine);
+        }
+
         private static byte[] Hash(string path)
         {
             using (var sha = SHA256.Create())
@@ -1058,6 +1067,9 @@ namespace SapQuadTransitionPlugin
         private static bool SameRecords(Table expected, Table actual)
         {
             if (!expected.Fields.SequenceEqual(actual.Fields) || expected.Records != actual.Records) return false;
+            // Most restored tables retain their row order. Avoid allocating and
+            // sorting thousands of encoded rows on this common verification path.
+            if (expected.Data.SequenceEqual(actual.Data)) return true;
             Func<Table, string[]> rows = table => Enumerable.Range(0, table.Records).Select(row =>
                 string.Join(",", table.Data.Skip(row * table.Fields.Length)
                     .Take(table.Fields.Length).Select(B64)))
@@ -1308,8 +1320,10 @@ namespace SapQuadTransitionPlugin
 
         private void RestoreCoreByTables(cSapModel model, IEnumerable<string> generatedAreas)
         {
+            var clock = Stopwatch.StartNew();
             CheckRestoreLocale();
             SnapshotData snapshot = Load(model);
+            RecordUndoPhase("load", clock);
             RestoreAttempted = true;
             if (model.GetModelIsLocked())
                 throw new InvalidOperationException("Unlock SAP2000 before applying the tabular Undo.");
@@ -1317,7 +1331,7 @@ namespace SapQuadTransitionPlugin
             Table joints = tables.First(item => item.Key == "Joint Coordinates");
             Table areas = tables.First(item => item.Key == "Connectivity - Area");
             Table sections = tables.First(item => item.Key == "Area Section Assignments");
-            var clock = Stopwatch.StartNew();
+            clock.Restart();
             var originalNames = new HashSet<string>(AreaJoints(areas.Fields, areas.Data, areas.Records,
                 "tabular Undo originals").Keys, StringComparer.OrdinalIgnoreCase);
             var polygonNames = new HashSet<string>(AreaJoints(areas.Fields, areas.Data, areas.Records,
@@ -1338,9 +1352,12 @@ namespace SapQuadTransitionPlugin
             }
             if (WasApplied)
             {
+                var appliedClock = Stopwatch.StartNew();
                 CheckRestoreLocale();
                 PrepareAreaNameConflicts(model, areas,
                     new HashSet<string>(generatedAreas, StringComparer.OrdinalIgnoreCase));
+                RecordUndoPhase("applied-name-preparation", appliedClock);
+                appliedClock.Restart();
                 Table currentAreas = PadExistingTriangles(Read(model, "Connectivity - Area"));
                 var currentNames = new HashSet<string>(AreaJoints(currentAreas.Fields, currentAreas.Data,
                     currentAreas.Records, "tabular Undo current areas").Keys, StringComparer.OrdinalIgnoreCase);
@@ -1376,6 +1393,7 @@ namespace SapQuadTransitionPlugin
                 VerifyConnectivity(model, regularOriginalAreas.Fields, regularOriginalAreas.Data,
                     regularOriginalAreas.Records,
                     "tabular original area creation");
+                RecordUndoPhase("applied-original-creation", appliedClock);
             }
             Check(model.DatabaseTables.CancelTableEditing(), "clearing staged tables before tabular Undo", "DatabaseTables.CancelTableEditing");
             CheckRestoreLocale();
@@ -1386,9 +1404,13 @@ namespace SapQuadTransitionPlugin
             Stage(model, tabularAreas);
             Stage(model, tabularSections);
             CheckRestoreLocale();
+            RecordUndoPhase("geometry-staging", clock);
+            var importClock = Stopwatch.StartNew();
             Apply(model, "tabular geometry", tabularAreas);
+            RecordUndoPhase("geometry-table-import", importClock);
             if (polygonNames.Count != 0)
             {
+                var polygonClock = Stopwatch.StartNew();
                 CheckRestoreLocale();
                 if (proxyPolygon != null)
                 {
@@ -1402,12 +1424,16 @@ namespace SapQuadTransitionPlugin
                 }
                 Stage(model, joints);
                 CheckRestoreLocale();
+                RecordUndoPhase("polygon-joint-staging", polygonClock);
+                var polygonImportClock = Stopwatch.StartNew();
                 Apply(model, "tabular polygon joint preparation");
+                RecordUndoPhase("polygon-joint-import", polygonImportClock);
                 RestoreMissingPolygonJoints(model, snapshot, areas);
                 RestoreOriginalAreas(model, areas, sections, 5);
                 Console.WriteLine("csv-undo-phase=polygon-object-api count=" + polygonNames.Count);
+                RecordUndoPhase("polygon-restoration", polygonClock);
             }
-            Console.WriteLine("csv-undo-phase=geometry seconds=" + clock.Elapsed.TotalSeconds.ToString("R", CultureInfo.InvariantCulture));
+            RecordUndoPhase("geometry", clock);
 
             // Validate areas and GUIDs before restoring dependent assignments.
             try { VerifyConnectivity(model, areas.Fields, areas.Data, areas.Records, "tabular geometry phase"); }
@@ -1447,7 +1473,7 @@ namespace SapQuadTransitionPlugin
             if (staged) { CheckRestoreLocale(); Apply(model, "tabular object assignments"); }
             CheckRestoreLocale();
             RestoreAreaMaterialTemperatures(model, tables);
-            Console.WriteLine("csv-undo-phase=assignments seconds=" + clock.Elapsed.TotalSeconds.ToString("R", CultureInfo.InvariantCulture));
+            RecordUndoPhase("assignments", clock);
 
             // When an original table is imported while generated areas still
             // reference their mesh joints, SAP retains those joints. Only now,
@@ -1458,19 +1484,23 @@ namespace SapQuadTransitionPlugin
             Stage(model, joints);
             CheckRestoreLocale();
             Apply(model, "tabular orphan joint cleanup");
-            Console.WriteLine("csv-undo-phase=joints seconds=" + clock.Elapsed.TotalSeconds.ToString("R", CultureInfo.InvariantCulture));
+            RecordUndoPhase("joints", clock);
 
+            clock.Restart();
             VerifyOriginalGeometry(model, snapshot, areas);
             foreach (Table expected in tables.Where(IsObjectAssignment))
-                if (!SameRecords(expected, Read(model, expected.Key)))
+            {
+                Table actual = Read(model, expected.Key);
+                if (!SameRecords(expected, actual))
                 {
-                    Table actual = Read(model, expected.Key);
                     throw new InvalidDataException("Object assignments differ after tabular Undo: " + expected.Key +
                         ": " + RecordDifference(expected, actual));
                 }
+            }
             if (!SameRecords(joints, Read(model, joints.Key)) ||
                 !SameRecords(sections, Read(model, sections.Key)))
                 throw new InvalidDataException("Primary table values differ after tabular Undo.");
+            RecordUndoPhase("verification", clock);
             RecordUndoMethod("tabular");
             Console.WriteLine("csv-undo-method=tabular verified=true");
         }

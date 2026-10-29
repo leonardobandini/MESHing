@@ -185,20 +185,6 @@ namespace SapQuadTransitionPlugin
                         MessageBoxButtons.OK, MessageBoxIcon.Warning));
                 return;
             }
-            // The options dialog stays above SAP2000 while meshing, but the
-            // browser needs to come to the foreground when help is requested.
-            Form elevated = owner.TopMost ? owner : owner.Owner as Form;
-            if (elevated != null && elevated.TopMost)
-            {
-                elevated.TopMost = false;
-                EventHandler restore = null;
-                restore = delegate
-                {
-                    elevated.Activated -= restore;
-                    if (!elevated.IsDisposed) elevated.TopMost = true;
-                };
-                elevated.Activated += restore;
-            }
             Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         }
 
@@ -563,8 +549,7 @@ namespace SapQuadTransitionPlugin
                 uint hostPid;
                 if (GetWindowThreadProcessId(hostWindow, out hostPid) == 0 ||
                     hostPid != (uint)Process.GetCurrentProcess().Id) return;
-                // Raise SAP only within the normal window band, without
-                // activating it. MESHing and its owned dialog remain TopMost.
+                // Keep the host in the normal window band, without activating it.
                 if (!SetWindowPos(hostWindow, IntPtr.Zero, 0, 0, 0, 0,
                     0x0001 | 0x0002 | 0x0010 | 0x0200)) // NOSIZE, NOMOVE, NOACTIVATE, NOOWNERZORDER
                     LogPluginException(new InvalidOperationException("Cannot order the host below MESHing: " +
@@ -991,7 +976,8 @@ namespace SapQuadTransitionPlugin
             bool hasFrames;
             string[] pointGroups, openingGroups;
             SymmetryAxis[] symmetryAxes;
-            var startupCancellation = new CancellationController(useItalian);
+            var startupCancellation = new CancellationController(useItalian, null,
+                Process.GetCurrentProcess().MainWindowHandle);
             Action startupCheckpoint = delegate
             {
                 if (startupCancellation.Requested)
@@ -1038,11 +1024,11 @@ namespace SapQuadTransitionPlugin
                 dialog.SetRequiresSavedModel(!modelHasSavedFile);
                 bool leaveCompletedDialog = Environment.GetEnvironmentVariable("SAP_QUAD_LEAVE_COMPLETED_DIALOG") == "1";
                 bool automatedExample = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE"));
-                // Keep the separate dialog above SAP2000 without disabling its
-                // viewport: the generated mesh can be inspected before Apply.
-                dialog.ShowInTaskbar = true;
-                dialog.TopMost = true;
-                dialog.Show();
+                // Native ownership keeps MESHing above its host without placing
+                // either window above unrelated applications.
+                dialog.ShowInTaskbar = false;
+                if (sapWindow != IntPtr.Zero) dialog.Show(new WindowOwner(sapWindow));
+                else dialog.Show();
                 dialog.SetGenerationFilterCheck(delegate
                 {
                     if (!IsSelectionOnlyTableFilterActive(model)) return true;
@@ -1398,15 +1384,18 @@ namespace SapQuadTransitionPlugin
                                 applyClock.Restart();
                                 dialog.ThrowIfRegionalSettingsChanged();
                                 CommitAttempts(model, results, dialog.ThrowIfRegionalSettingsChanged);
+                                RecordApplyPhase("commit-source-areas", applyClock);
                                 dialog.ThrowIfRegionalSettingsChanged();
                                 RenameGeneratedPointsAfterApply(model, results, dialog.ThrowIfRegionalSettingsChanged);
+                                RecordApplyPhase("rename-generated-joints", applyClock);
                                 dialog.ThrowIfRegionalSettingsChanged();
                                 RenameGeneratedAreasAfterApply(model, results, chosen.Meshes,
                                     dialog.ThrowIfRegionalSettingsChanged);
+                                RecordApplyPhase("rename-generated-areas", applyClock);
                                 dialog.ThrowIfRegionalSettingsChanged();
-                                VerifyAppliedObjectNames(model, results);
+                                MeshInventory committedInventory = VerifyAppliedObjectNames(model, results, afterMeshing);
                                 csvSnapshot.MarkApplied();
-                                RecordApplyPhase("commit-source-areas", applyClock);
+                                RecordApplyPhase("verify-applied-names", applyClock);
                                 try
                                 {
                                     for (int i = 0; i < chosen.Meshes.Count; i++)
@@ -1432,8 +1421,11 @@ namespace SapQuadTransitionPlugin
                                         dialog.ThrowIfRegionalSettingsChanged);
                                     throw;
                                 }
-                                dialog.SetGeneratedInventory(CaptureMeshInventory(model, null));
-                                RecordApplyPhase("recount-all-shell-vertices", applyClock);
+                                // The preview already counted every child's corners. Apply
+                                // renames those objects and removes only the source areas;
+                                // the verified post-commit names/counts suffice for the UI.
+                                dialog.SetGeneratedInventory(committedInventory);
+                                RecordApplyPhase("reuse-verified-mesh-inventory", applyClock);
                                 model.View.RefreshView(0, false);
                                 RecordApplyPhase("refresh-sap-view", applyClock);
                             },
@@ -5645,17 +5637,39 @@ namespace SapQuadTransitionPlugin
             Console.WriteLine("mesh-applied-numeric-areas=" + renamed.Count);
         }
 
-        private static void VerifyAppliedObjectNames(cSapModel model, List<MeshAttemptResult> results)
+        private static MeshInventory VerifyAppliedObjectNames(cSapModel model,
+            List<MeshAttemptResult> results, MeshInventory preview)
         {
-            int pointCount = 0, areaCount = 0;
-            string[] pointNames = null, areaNames = null;
+            int pointCount = 0, areaCount = 0, frameCount = 0, linkCount = 0;
+            int unchangedQuads = 0, unchangedTriangles = 0, unchangedPolygons = 0;
+            foreach (MeshAttemptResult result in results.Where(item => item.Operation.Unchanged))
+            {
+                int corners = 0;
+                string[] cornersNames = null;
+                Check(model.AreaObj.GetPoints(result.Operation.SourceArea, ref corners, ref cornersNames),
+                    "checking unchanged source area after Apply", "AreaObj.GetPoints");
+                if (corners == 4) unchangedQuads++;
+                else if (corners == 3) unchangedTriangles++;
+                else if (corners > 4) unchangedPolygons++;
+                else throw new InvalidDataException("An unchanged source area lost its corners during Apply.");
+            }
+            int expectedAreas = preview.Areas + unchangedQuads + unchangedTriangles + unchangedPolygons;
+            string[] pointNames = null, areaNames = null, frameNames = null, linkNames = null;
             Check(model.PointObj.GetNameList(ref pointCount, ref pointNames),
                 "checking committed joint names", "PointObj.GetNameList");
             Check(model.AreaObj.GetNameList(ref areaCount, ref areaNames),
                 "checking committed area names", "AreaObj.GetNameList");
+            Check(model.FrameObj.GetNameList(ref frameCount, ref frameNames),
+                "checking committed frames", "FrameObj.GetNameList");
+            Check(model.LinkObj.GetNameList(ref linkCount, ref linkNames),
+                "checking committed links", "LinkObj.GetNameList");
             var points = new HashSet<string>(pointNames ?? new string[0], StringComparer.OrdinalIgnoreCase);
             var areas = new HashSet<string>(areaNames ?? new string[0], StringComparer.OrdinalIgnoreCase);
             if (points.Count != pointCount || areas.Count != areaCount ||
+                areaCount != expectedAreas ||
+                preview.Quads + preview.Triangles + preview.Polygons +
+                    unchangedQuads + unchangedTriangles + unchangedPolygons != areaCount ||
+                frameCount != preview.Frames || linkCount != preview.Links ||
                 results.SelectMany(result => result.Operation.GeneratedPoints)
                     .Any(name => !IsNumericObjectName(name) || !points.Contains(name)) ||
                 results.SelectMany(result => result.Operation.GeneratedAreas.Where(name =>
@@ -5668,6 +5682,9 @@ namespace SapQuadTransitionPlugin
                     !string.IsNullOrEmpty(result.Operation.CommitBackupArea) &&
                         areas.Contains(result.Operation.CommitBackupArea)))
                 throw new InvalidDataException("Applied mesh still has a temporary generated object name or a missing object.");
+            return new MeshInventory(areaCount, preview.Quads + unchangedQuads,
+                preview.Triangles + unchangedTriangles, preview.Polygons + unchangedPolygons,
+                frameCount, linkCount, pointCount);
         }
 
         private static Exception RollBackFastCommitNames(cSapModel model, List<MeshOperation> operations)
@@ -7395,6 +7412,7 @@ namespace SapQuadTransitionPlugin
         {
             private readonly bool italian;
             private readonly Rectangle? anchor;
+            private readonly IntPtr ownerHandle;
             private readonly object progressLock = new object();
             private string progressMessage;
             private string progressArea = "";
@@ -7403,10 +7421,11 @@ namespace SapQuadTransitionPlugin
             private Form window;
             public bool Requested { get { return Volatile.Read(ref requested) != 0; } }
 
-            public CancellationController(bool italian, Rectangle? anchor = null)
+            public CancellationController(bool italian, Rectangle? anchor = null, IntPtr ownerHandle = default(IntPtr))
             {
                 this.italian = italian;
                 this.anchor = anchor;
+                this.ownerHandle = ownerHandle;
                 progressMessage = italian ? "Preparazione della mesh..." : "Preparing the mesh...";
                 var thread = new Thread(Run);
                 thread.IsBackground = true;
@@ -7498,8 +7517,7 @@ namespace SapQuadTransitionPlugin
                     form.Font = new Font("Segoe UI", 9);
                     form.FormBorderStyle = FormBorderStyle.FixedDialog;
                     form.MaximizeBox = form.MinimizeBox = false;
-                    form.ShowInTaskbar = true;
-                    form.TopMost = true;
+                    form.ShowInTaskbar = false;
                     form.StartPosition = FormStartPosition.Manual;
                     Rectangle screen = anchor.HasValue ? Screen.FromRectangle(anchor.Value).WorkingArea :
                         Screen.PrimaryScreen.WorkingArea;
@@ -7565,7 +7583,10 @@ namespace SapQuadTransitionPlugin
                     if (Volatile.Read(ref stopped) == 0)
                     {
                         timer.Start();
-                        Application.Run(form);
+                        if (ownerHandle != IntPtr.Zero && IsWindow(ownerHandle))
+                            form.Show(new WindowOwner(ownerHandle));
+                        else form.Show();
+                        Application.Run(new ApplicationContext(form));
                     }
                     timer.Dispose();
                     window = null;
@@ -7581,6 +7602,8 @@ namespace SapQuadTransitionPlugin
                 public double SizeMeters { get; set; }
                 public double MinMeters { get; set; }
                 public string Language { get; set; }
+                public bool? FastMode { get; set; }
+                public bool? CreateBackup { get; set; }
                 // Read the two sizes from settings written by earlier versions.
                 public GmshPreviewPanel.Values GmshPreview { get; set; }
             }
@@ -7639,10 +7662,20 @@ namespace SapQuadTransitionPlugin
                         options.MinMeters = options.GmshPreview.MinMeters;
                     }
                     options.Language = useItalian ? "it" : "en";
+                    options.FastMode = fastMode.Checked;
+                    options.CreateBackup = createBackup.Checked;
+                    // Persist the generation tab, but never its additional-tab
+                    // regular-grid switch (which belongs to this session only).
+                    if (validMaximum && validMinimum && minimum < maximum)
+                    {
+                        options.GmshPreview = gmshPreviewOptions.Capture(MetersPerUnit(units));
+                        options.GmshPreview.FavorRegularGrid = false;
+                    }
                     Directory.CreateDirectory(Path.GetDirectoryName(OptionsFile));
                     string temporary = OptionsFile + ".tmp";
                     File.WriteAllText(temporary, new JavaScriptSerializer().Serialize(new {
-                        options.SizeMeters, options.MinMeters, options.Language }), Encoding.UTF8);
+                        options.SizeMeters, options.MinMeters, options.Language,
+                        options.FastMode, options.CreateBackup, options.GmshPreview }), Encoding.UTF8);
                     if (File.Exists(OptionsFile)) File.Replace(temporary, OptionsFile, null);
                     else File.Move(temporary, OptionsFile);
                 }
@@ -7654,8 +7687,12 @@ namespace SapQuadTransitionPlugin
             {
                 SavedOptions saved = ReadSavedOptions();
                 if (saved == null) return;
+                if (saved.FastMode.HasValue) fastMode.Checked = saved.FastMode.Value;
+                if (saved.CreateBackup.HasValue) createBackup.Checked = saved.CreateBackup.Value;
                 if (gmshPreviewOptions != null)
                 {
+                    if (saved.GmshPreview != null)
+                        gmshPreviewOptions.Restore(saved.GmshPreview);
                     double maximum = saved.SizeMeters > 0 ? saved.SizeMeters :
                         saved.GmshPreview == null ? 0 : saved.GmshPreview.MaxMeters;
                     double minimum = saved.GmshPreview == null ? saved.MinMeters :
@@ -8371,7 +8408,6 @@ namespace SapQuadTransitionPlugin
                 // SAP2000 handles navigation on its own thread after the plugin
                 // callback has returned. Keep the dialog in sight while the user
                 // zooms or pans in the uncovered portion of the viewport.
-                TopMost = true;
                 if (window == IntPtr.Zero) return;
                 viewportWindow = window;
                 if (!IsWindowEnabled(window))
@@ -8454,7 +8490,7 @@ namespace SapQuadTransitionPlugin
                     ClientSize = new Size(440, 160), Font = Font, BackColor = Color.White,
                     FormBorderStyle = FormBorderStyle.FixedDialog,
                     StartPosition = FormStartPosition.CenterParent,
-                    ControlBox = false, ShowInTaskbar = false, TopMost = true
+                    ControlBox = false, ShowInTaskbar = false
                 };
                 ApplyPluginIcon(progressWindow);
                 string action = apply ? L("Applying the mesh.", "Applicazione della mesh in corso.") :
@@ -8993,6 +9029,14 @@ namespace SapQuadTransitionPlugin
                 symmetryAxis.SelectedIndexChanged += delegate { UpdateGmshPreview(); };
                 if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE")))
                     RestoreOptions();
+                // Additional options are session-only, regardless of settings
+                // previously written by older releases.
+                gmshPreviewOptions.RegularGrid.Checked = false;
+                gmshPreserveSelectedEdges.Checked = false;
+                symmetric.Checked = false;
+                generateCircularHoles.Checked = false;
+                gmshOGrid.Checked = false;
+                generateHoles.Checked = false;
                 gmshPreviewTabs.SelectedTab = gmshPreviewEmptyTab;
                 gmshPreviewTabs.BringToFront();
                 UpdateGmshLanguage();
@@ -9247,7 +9291,7 @@ namespace SapQuadTransitionPlugin
                 if (!hasUpdate) { updateNotice.BackColor = Color.White; updateNotice.LinkColor = UiBlue; }
                 updateNotice.Text = checkingUpdates ? L("Checking for updates...", "Ricerca aggiornamenti...") :
                     hasUpdate ? L("Update available\nDownload ", "Aggiornamento disponibile\nScarica ") + availableVersion :
-                    updateCheckSucceeded ? L("Version " + PluginVersion + " is up to date", "La versione " + PluginVersion + " e aggiornata") :
+                    updateCheckSucceeded ? L("Version " + PluginVersion + " is up to date", "La versione " + PluginVersion + " è aggiornata") :
                     L("Check for updates", "Cerca aggiornamenti");
                 updateNotice.Font = hasUpdate ? updateNoticeBoldFont : Font;
             }
@@ -9456,17 +9500,18 @@ namespace SapQuadTransitionPlugin
                 string tip = L("Enter a number in the current SAP2000 unit (" + units + ") or add m, cm, mm, ft, in; for example 25mm or 2.5ft. Explicit units are converted automatically.",
                     "Inserire un numero nell'unita SAP2000 corrente (" + units + ") oppure aggiungere m, cm, mm, ft, in; per esempio 25mm o 2,5ft. Le unita esplicite sono convertite automaticamente.");
                 measurementToolTip.SetToolTip(holeDiameter, tip);
-                fastMode.Text = L("Use interactive database to generate elements in SAP2000/CSiBridge (fast mode)",
-                    "Usa il database interattivo per generare elementi in SAP2000/CSiBridge (modalità veloce)");
-                createBackupDescription.Text = L("Before every Generate, copy the previously saved SDB/BDB to a numbered backup, " +
-                    "then save the current model to its SDB/BDB and capture the Undo snapshot. " +
-                    "The backup does not include edits that were still unsaved before Generate.",
-                    "Prima di ogni Genera, copia l'SDB/BDB già salvato nel backup numerato, " +
-                    "poi salva il modello corrente nello stesso SDB/BDB e acquisisce lo snapshot per Annulla. " +
-                    "Il backup non include le modifiche ancora non salvate prima di Genera.");
+                string host = HostProductName();
+                string extension = host == "CSiBridge" ? "BDB" : host == "ETABS" ? "EDB" : "SDB";
+                fastMode.Text = L("Use interactive database to generate elements in " + host + " (fast mode)",
+                    "Usa il database interattivo per generare elementi in " + host + " (modalità veloce)");
+                createBackupDescription.Text = L("Before every Generate, selecting this option requests a copy of the " +
+                    extension + " model file on disk. This file contains the model state at the user's last save. " +
+                    "Therefore this backup does not include any changes made to the model since that save.",
+                    "Prima di ogni Genera, selezionando questa opzione si richiede la copia del file " + extension +
+                    " del modello presente sul disco, questo file contiene lo stato del modello con l'ultimo salvataggio che l'Utente ha fatto. " +
+                    "Questo backup quindi non include le modifiche eventuali al modello fatte dall'ultimo salvataggio.");
                 createBackup.AccessibleName = createBackupDescription.Text;
-                measurementToolTip.SetToolTip(createBackup, L("Copies the previous saved file before Generate saves the current model, including its unsaved edits.",
-                    "Copia il file salvato in precedenza prima che Genera salvi il modello corrente, comprese le modifiche ancora non salvate."));
+                measurementToolTip.SetToolTip(createBackup, createBackupDescription.Text);
                 measurementToolTip.SetToolTip(createBackupDescription, measurementToolTip.GetToolTip(createBackup));
                 ApplySelectionSummary();
                 UpdateCreatedElements();
@@ -9505,8 +9550,9 @@ namespace SapQuadTransitionPlugin
                     holeDiameter.Enabled = generateCircularHoles.Checked;
                     preferRegular.Enabled = stressRefinement.Enabled = structuredSectorBands.Enabled = false;
                     fastMode.Enabled = useMaximumCores.Enabled = workerLimit.Enabled = generate.Enabled = false;
-                    createBackup.Enabled = false;
-                    createBackupDescription.Enabled = false;
+                    createBackup.Enabled = !requiresSavedModel;
+                    createBackupDescription.Enabled = !requiresSavedModel;
+                    fastMode.Enabled = true;
                     return;
                 }
                 if (qualityReport == null) generate.Enabled = !requiresSavedModel;
@@ -9538,7 +9584,7 @@ namespace SapQuadTransitionPlugin
                 designTransferLossWarning = false;
                 transferWarnings.Clear();
                 reportedTransferWarnings = 0;
-                if (cancellationController == null) cancellationController = new CancellationController(useItalian, Bounds);
+                if (cancellationController == null) cancellationController = new CancellationController(useItalian, Bounds, Handle);
                 PauseViewportInteraction();
                 working = true;
                 meshAreasCompleted = meshAreasTotal = 0;
@@ -9741,6 +9787,7 @@ namespace SapQuadTransitionPlugin
                 SetGeneratedInventory(afterMeshing);
                 gmshPreviewTabs.Enabled = true;
                 gmshResetDefault.Enabled = true;
+                UpdateOptionState();
                 status.Text = report.Passed
                     ? L("Mesh completed. Area elements created: ", "Mesh completata. Elementi area creati: ") + generatedAreaCount +
                         L(". Quality checks passed.", ". Controlli di qualita superati.")
