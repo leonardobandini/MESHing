@@ -39,7 +39,7 @@ namespace SapQuadTransitionPlugin
         private const int AreaObjectType = 5;
         private const int SolidObjectType = 6;
         private const int LinkObjectType = 7;
-        private const string PluginVersion = "3.0.3";
+        private const string PluginVersion = "3.0.4";
         private const string WindowTitle = "MESHing " + PluginVersion;
         private const string UpdateManifestUrl = "https://api.github.com/repos/leonardobandini/MESHing/releases/latest";
         private const string LatestDownloadUrl = "https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip";
@@ -54,18 +54,26 @@ namespace SapQuadTransitionPlugin
         private static int interactiveRunActive;
         private static int hostRegionalUnsafe;
         private static MeshOptionsDialog interactiveDialog;
+        // Querying ProcessName/StartTime repeatedly is expensive in SAP2000's
+        // Windows process environment. The host identity and start time cannot
+        // change during this process; only the registry timestamp needs polling.
+        private static readonly string CurrentHostProcessName = Process.GetCurrentProcess().ProcessName;
+        private static readonly Lazy<DateTime> CurrentHostStartedUtc = new Lazy<DateTime>(() =>
+        {
+            using (Process host = Process.GetCurrentProcess()) return host.StartTime.ToUniversalTime();
+        });
 
         private static string L(string english, string italian) { return useItalian ? italian : english; }
         private static bool IsSupportedHostProcess()
         {
-            string name = Process.GetCurrentProcess().ProcessName;
+            string name = CurrentHostProcessName;
             return name.Equals("SAP2000", StringComparison.OrdinalIgnoreCase) ||
                 name.Equals("CSiBridge", StringComparison.OrdinalIgnoreCase) ||
                 name.Equals("ETABS", StringComparison.OrdinalIgnoreCase);
         }
         private static string HostProductName()
         {
-            string name = Process.GetCurrentProcess().ProcessName;
+            string name = CurrentHostProcessName;
             return name.Equals("CSiBridge", StringComparison.OrdinalIgnoreCase) ? "CSiBridge" :
                 name.Equals("ETABS", StringComparison.OrdinalIgnoreCase) ? "ETABS" : "SAP2000";
         }
@@ -503,6 +511,10 @@ namespace SapQuadTransitionPlugin
         [DllImport("user32.dll")]
         private static extern bool GetWindowRect(IntPtr window, out WindowRect rectangle);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y,
+            int width, int height, uint flags);
+
         private static T ShowHostModal<T>(IntPtr pluginWindow, IntPtr hostWindow, Func<T> show)
         {
             if (hostWindow == IntPtr.Zero || !IsWindow(hostWindow)) return show();
@@ -538,11 +550,29 @@ namespace SapQuadTransitionPlugin
             }
         }
 
-        internal static T ShowHostModalFromPanel<T>(Form owner, Func<T> show)
+        internal static T ShowHostModalFromPanel<T>(Form settings, Form parent, Func<T> show)
         {
             MeshOptionsDialog dialog = interactiveDialog;
             IntPtr hostWindow = dialog == null ? Process.GetCurrentProcess().MainWindowHandle : dialog.HostWindow;
-            return ShowHostModal(owner.Handle, hostWindow, show);
+            // Let ShowDialog disable its actual owner. Disabling the MESHing
+            // window before assigning ownership can reorder the SAP window
+            // behind unrelated applications on some machines.
+            settings.Shown += delegate
+            {
+                if (hostWindow == IntPtr.Zero || !IsWindow(hostWindow)) return;
+                uint hostPid;
+                if (GetWindowThreadProcessId(hostWindow, out hostPid) == 0 ||
+                    hostPid != (uint)Process.GetCurrentProcess().Id) return;
+                // Raise SAP only within the normal window band, without
+                // activating it. MESHing and its owned dialog remain TopMost.
+                if (!SetWindowPos(hostWindow, IntPtr.Zero, 0, 0, 0, 0,
+                    0x0001 | 0x0002 | 0x0010 | 0x0200)) // NOSIZE, NOMOVE, NOACTIVATE, NOOWNERZORDER
+                    LogPluginException(new InvalidOperationException("Cannot order the host below MESHing: " +
+                        Marshal.GetLastWin32Error()));
+            };
+            // In standalone UI tests the plugin form itself can be the process
+            // main window; it is not a separate SAP viewport to lock.
+            return hostWindow == parent.Handle ? show() : ShowHostModal(parent.Handle, hostWindow, show);
         }
 
         private static string WindowText(IntPtr window)
@@ -1177,6 +1207,8 @@ namespace SapQuadTransitionPlugin
                         if (!string.Equals(model.GetModelFilename(true), savedPath, StringComparison.OrdinalIgnoreCase))
                             throw new InvalidOperationException("SAP2000 changed the active model during the pre-mesh save.");
                         RecordGenerationPhase("save-current-model", generationClock);
+                        dialog.SetIndeterminate(L("Capturing the model snapshot for Undo...",
+                            "Acquisizione dello snapshot del modello per Annulla..."));
                         TraceCancellationStage("snapshot-start");
                         csvSnapshot = ModelCsvSnapshot.Capture(model, dialog.PumpCancellation);
                         TraceCancellationStage("snapshot-complete");
@@ -5188,9 +5220,7 @@ namespace SapQuadTransitionPlugin
             if (Volatile.Read(ref hostRegionalUnsafe) != 0) return true;
             try
             {
-                DateTime hostStartedUtc;
-                using (Process host = Process.GetCurrentProcess())
-                    hostStartedUtc = host.StartTime.ToUniversalTime();
+                DateTime hostStartedUtc = CurrentHostStartedUtc.Value;
                 string[] paths = { @"Control Panel\International", @"Control Panel\International\User Profile",
                     @"Control Panel\International\User Profile\Time",
                     @"Control Panel\International\User Profile\Calendars",
@@ -7871,10 +7901,11 @@ namespace SapQuadTransitionPlugin
             }
             public void PumpCancellation()
             {
-                ThrowIfCancellationRequested();
+                if (CancelRequested) throw new OperationCanceledException("Mesh generation cancelled by the user.");
                 long now = Stopwatch.GetTimestamp();
                 if (now - lastCancellationPump < Stopwatch.Frequency / 20) return;
                 lastCancellationPump = now;
+                ThrowIfCancellationRequested();
                 Application.DoEvents();
                 ThrowIfCancellationRequested();
             }
@@ -9544,8 +9575,11 @@ namespace SapQuadTransitionPlugin
                     text == "Generating the mesh...") && meshAreasTotal > meshAreasCompleted;
                 string message = LocalizeMessage(text);
                 if (meshingActive) UpdateMeshingStatus();
-                else if (working && cancellationController != null) cancellationController.Report(message);
-                else status.Text = message;
+                else
+                {
+                    status.Text = message;
+                    if (working && cancellationController != null) cancellationController.Report(message);
+                }
                 Application.DoEvents();
                 ThrowIfCancellationRequested();
             }

@@ -663,8 +663,9 @@ namespace SapQuadTransitionPlugin
                         e.Cancel = true;
                     }
                 };
-                if (cPlugin.ShowHostModalFromPanel(dialog,
-                    () => dialog.ShowDialog(scroller.FindForm())) != DialogResult.OK) return;
+                Form parent = scroller.FindForm();
+                if (cPlugin.ShowHostModalFromPanel(dialog, parent,
+                    () => dialog.ShowDialog(parent)) != DialogResult.OK) return;
                 sizeMap = map.SelectedIndex;
                 topology = new[] { 0, 100, 10, 1, 110, 101, 11 }[methods.SelectedIndex];
                 boldness = bold.Text; scaling = scale.Text;
@@ -688,8 +689,9 @@ namespace SapQuadTransitionPlugin
                         e.Cancel = true;
                     }
                 };
-                return cPlugin.ShowHostModalFromPanel(dialog,
-                    () => dialog.ShowDialog(scroller.FindForm())) == DialogResult.OK
+                Form parent = scroller.FindForm();
+                return cPlugin.ShowHostModalFromPanel(dialog, parent,
+                    () => dialog.ShowDialog(parent)) == DialogResult.OK
                     ? Array.ConvertAll(inputs, field => field.Text) : null;
             }
         }

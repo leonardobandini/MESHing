@@ -1,5 +1,12 @@
 # MESHing — changelog
 
+## MESHing 3.0.4 — release non contrassegnata "Latest"
+
+- Risolto il rallentamento dello snapshot introdotto dal controllo delle impostazioni internazionali della 3.0.3: il nome e l'ora di avvio del processo ospite sono acquisiti una sola volta, mentre la data di modifica del registro resta controllata durante il lavoro. Su `Circular_Floor` a 50 cm lo snapshot è passato dai 61–113 s osservati nella 3.0.3 a 9,6–14,6 s nella build corretta; senza profilatore 9,6 s. Il salvataggio e lo snapshot hanno ora messaggi distinti nell'interfaccia.
+- Aprendo le impostazioni di MeshAdapt, BAMG o dell'ottimizzatore Gmsh, le finestre rispettano l'ordine opzioni → MESHing → host senza far passare SAP2000/CSiBridge sotto le altre applicazioni.
+- La release 3.0.3 rimane ritirata in bozza; la 3.0.4 è una release normale, visibile nell'elenco GitHub ma non "Latest". `MESHing-latest.zip` e il feed degli aggiornamenti continuano a puntare alla 3.0.2 finché la stessa release 3.0.4 non viene contrassegnata manualmente "Latest", senza nuovo bump né nuovi asset.
+- Risultati delle regressioni di rilascio in `docs/MESHING_3_0_4_RELEASE.md`.
+
 ## MESHing 3.0.3 — impostazioni della sessione e protezione del formato regionale
 
 - Alla riapertura, le opzioni della mesh tornano ai default; rimangono soltanto le dimensioni minima/massima e l'ultima lingua scelta. Senza preferenza salvata si usa la lingua dell'interfaccia di sistema. Durante la stessa sessione aperta le opzioni restano disponibili per generazioni consecutive.

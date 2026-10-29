@@ -4,7 +4,9 @@ param([Parameter(Mandatory=$true)][string]$PluginPath,
       [Parameter(Mandatory=$true)][string]$ResultsRoot,
       [int]$CaseTimeoutSeconds = 480,
       [switch]$VerifyOnly,
-      [switch]$Resume)
+      [switch]$Resume,
+      [switch]$ConcurrentHosts,
+      [string]$VersionLabel = '3.0.3')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $parent = Join-Path $env:TEMP 'opencode'
@@ -33,11 +35,11 @@ function Verify-Inputs {
             $originalHashes[$id]) { throw "Original regression input changed: $id" }
     }
 }
-function Verify-Sap([string]$mode) {
+function Verify-Sap([string]$mode, [bool]$existingResults = $false) {
     $path = Join-Path $ResultsRoot ('sap-' + $mode)
     & (Join-Path $PSScriptRoot 'RunGmshV2FullRegression.ps1') -PluginPath $PluginPath `
         -ResultsRoot $path -WorkerCount 3 -CaseTimeoutSeconds $CaseTimeoutSeconds `
-        -VerifyOnly:([bool]($VerifyOnly -or ($Resume -and $mode -eq 'apply'))) -Undo:($mode -eq 'undo')
+        -VerifyOnly:([bool]($VerifyOnly -or $existingResults -or ($Resume -and $mode -eq 'apply'))) -Undo:($mode -eq 'undo')
     $rows = @(Import-Csv -LiteralPath (Join-Path $path 'summary.csv'))
     if ($rows.Count -ne 36 -or @(Compare-Object $ids @($rows | ForEach-Object id)).Count -or
         @($rows | Where-Object { $_.status -ne 'PASS' -or $_.mode -ne $mode.ToUpperInvariant() -or
@@ -113,9 +115,35 @@ if (-not $VerifyOnly) {
     if (-not $Resume) { $null = New-Item -ItemType Directory -Path $ResultsRoot }
 }
 foreach ($mode in @('apply','undo')) {
-    Verify-Sap $mode
-    Verify-Inputs
-    Verify-Bridge $mode
+    if ($ConcurrentHosts -and -not $VerifyOnly -and -not ($Resume -and $mode -eq 'apply')) {
+        $sapPath = Join-Path $ResultsRoot ('sap-' + $mode)
+        $arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -PluginPath "{1}" -ResultsRoot "{2}" -WorkerCount 3 -CaseTimeoutSeconds {3}' -f `
+            (Join-Path $PSScriptRoot 'RunGmshV2FullRegression.ps1'), $PluginPath, $sapPath, $CaseTimeoutSeconds
+        if ($mode -eq 'undo') { $arguments += ' -Undo' }
+        $sapWorker = Start-Process powershell.exe -ArgumentList $arguments -PassThru `
+            -RedirectStandardOutput ($sapPath + '.out.log') -RedirectStandardError ($sapPath + '.err.log')
+        try {
+            'SAP_MATRIX_STARTED=MODE={0} PID={1} WORKERS=3' -f $mode,$sapWorker.Id
+            Verify-Bridge $mode
+            if (-not $sapWorker.WaitForExit(($CaseTimeoutSeconds * 12 + 180) * 1000)) {
+                throw "SAP $mode matrix timed out; owned SAP processes were left for inspection."
+            }
+            $sapErrors = @(Get-Content -LiteralPath ($sapPath + '.err.log') -ErrorAction SilentlyContinue |
+                Where-Object { $_.Trim() })
+            if ($sapErrors.Count) {
+                throw "SAP $mode matrix exited with errors: ${sapPath}.err.log"
+            }
+            Verify-Sap $mode $true
+            if ($sapWorker.ExitCode -ne 0) {
+                Write-Warning "SAP $mode coordinator exited nonzero with only optional .Y_ diagnostics; all 36 cases passed."
+            }
+        } finally { $sapWorker.Dispose() }
+    }
+    else {
+        Verify-Sap $mode
+        Verify-Inputs
+        Verify-Bridge $mode
+    }
     Verify-Inputs
 }
-'MESHING_3_0_3_MATRIX=PASS SAP_APPLY=36 SAP_UNDO=36 BRIDGE_APPLY=36 BRIDGE_UNDO=36 TOTAL=144'
+('MESHING_{0}_MATRIX=PASS SAP_APPLY=36 SAP_UNDO=36 BRIDGE_APPLY=36 BRIDGE_UNDO=36 TOTAL=144' -f $VersionLabel.Replace('.', '_'))

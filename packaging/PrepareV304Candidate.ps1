@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Assemble ten MESHing 3.0.4 release assets without changing the current latest.
+param([string]$OutputDirectory = '', [switch]$RebuildExisting)
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent $PSScriptRoot
+$artifacts = Join-Path $root 'artifacts'
+$version = '3.0.4'
+[xml]$project = Get-Content -LiteralPath (Join-Path $root 'SapQuadTransitionPlugin\SapGmshReplacement.csproj')
+if ($project.Project.PropertyGroup.Version -ne $version) { throw 'Plugin version differs from MESHing 3.0.4.' }
+$expected = Join-Path $artifacts "candidate-v$version"
+if (-not $OutputDirectory) { $OutputDirectory = $expected }
+if (-not [string]::Equals([IO.Path]::GetFullPath($OutputDirectory), [IO.Path]::GetFullPath($expected),
+    [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $artifacts -PathType Container)) {
+    throw "Candidate destination must be artifacts\candidate-v$version."
+}
+$installer = "MESHing-$version.zip"
+$source = "MESHing-$version-source.zip"
+$pinned = @{
+    'gmsh-4.15.2-source.tgz' = 'be3f66f225d27ba9fa014f07e83169285da8a051b0e8ab7103d88066b39bdd3e'
+    'mmg-5.5.2-source.tar.gz' = '3078a4e281640ae927223d449d37dfb63e0a7afc8ed737fc075eb6e255269a65'
+}
+$archives = @($installer, 'MESHing-latest.zip', $source,
+    'gmsh-4.15.2-source.tgz', 'mmg-5.5.2-source.tar.gz')
+$expectedNames = @($archives + @($archives | ForEach-Object { $_ + '.sha256' }))
+if (Test-Path -LiteralPath $OutputDirectory) {
+    $previous = @(Get-ChildItem -LiteralPath $OutputDirectory -File | Select-Object -ExpandProperty Name)
+    if (-not $RebuildExisting -or $previous.Count -ne 10 -or
+        @(Get-ChildItem -LiteralPath $OutputDirectory -Directory).Count -or
+        @($previous | Where-Object { $_ -notin $expectedNames }).Count) {
+        throw 'Refusing to replace a directory not recognized as the ten generated 3.0.4 assets.'
+    }
+    Remove-Item -LiteralPath $OutputDirectory -Recurse -Force
+}
+foreach ($name in @($installer, $source)) {
+    if (-not (Test-Path -LiteralPath (Join-Path $artifacts $name) -PathType Leaf)) {
+        throw "The fresh MESHing build is missing: $name"
+    }
+}
+foreach ($name in $pinned.Keys) {
+    $path = Join-Path $PSScriptRoot "cache\$name"
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $pinned[$name]) {
+        throw "Pinned upstream source differs: $name"
+    }
+}
+New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
+foreach ($name in @($installer, $source)) {
+    Copy-Item -LiteralPath (Join-Path $artifacts $name) -Destination (Join-Path $OutputDirectory $name)
+}
+foreach ($name in $pinned.Keys) {
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot "cache\$name") -Destination (Join-Path $OutputDirectory $name)
+}
+Copy-Item -LiteralPath (Join-Path $OutputDirectory $installer) -Destination (Join-Path $OutputDirectory 'MESHing-latest.zip')
+foreach ($name in $archives) {
+    $hash = (Get-FileHash -LiteralPath (Join-Path $OutputDirectory $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllText((Join-Path $OutputDirectory ($name + '.sha256')),
+        "$hash  $name`n", [Text.Encoding]::ASCII)
+    "ASSET=$name SHA256=$hash"
+}
+if ((Get-FileHash -LiteralPath (Join-Path $OutputDirectory $installer) -Algorithm SHA256).Hash -ne
+    (Get-FileHash -LiteralPath (Join-Path $OutputDirectory 'MESHing-latest.zip') -Algorithm SHA256).Hash) {
+    throw 'The versioned installer and release alias are not identical.'
+}
+$actual = @(Get-ChildItem -LiteralPath $OutputDirectory -File | Select-Object -ExpandProperty Name)
+if ($actual.Count -ne 10 -or @($actual | Where-Object { $_ -notin $expectedNames }).Count) {
+    throw 'The MESHing candidate must contain exactly ten expected assets.'
+}
+"MESHING_CANDIDATE=PASS COUNT=$($actual.Count) PATH=$OutputDirectory"

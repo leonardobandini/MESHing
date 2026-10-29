@@ -36,7 +36,7 @@ try {
         $sourceLink = @($dialog.Controls | Where-Object {
             $_ -is [Windows.Forms.LinkLabel] -and $_.Tag -eq 'license-link'
         })
-        Assert ($dialog.Text -eq 'MESHing 3.0.3' -and $headerTitle.Text -eq 'MESHing' -and
+        Assert ($dialog.Text -eq 'MESHing 3.0.4' -and $headerTitle.Text -eq 'MESHing' -and
             $headerTitle.Left -eq 22 -and $headerTitle.Top -eq 13 -and
             $dialog.ClientSize.Width -eq 570 -and $dialog.ClientSize.Height -eq 762 -and
             $companyLogo.Count -eq 1 -and $companyLogo[0].Width -eq 46 -and
@@ -312,6 +312,11 @@ try {
         Assert (-not (Field $dialog 'undo').Enabled -and
             (Field $dialog 'undo').Text -eq 'Undo mesh' -and
             -not $type.GetField('progress', $flags)) 'Cancel or progress is still exposed in the main window.'
+        $dialog.SetIndeterminate('Saving the model before meshing...')
+        $dialog.SetIndeterminate('Capturing the model snapshot for Undo...')
+        Assert ((Field $dialog 'status').Text -eq 'Capturing the model snapshot for Undo...' -and
+            (ProgressState 'progressMessage') -eq 'Capturing the model snapshot for Undo...') `
+            'Snapshot capture must replace the stale saving message in both progress windows.'
         $dialog.SetProgress('Creating SAP2000 points...', 2, 4)
         Assert ((ProgressState 'progressMessage') -match 'Phase progress: 2/4 \(50%\)' -and
             (ProgressState 'progressPercent') -eq 50) 'Point insertion did not identify its phase progress.'
@@ -647,6 +652,12 @@ try {
     } finally { $regionGuard.Dispose() }
     $pluginType = $assembly.GetType('SapQuadTransitionPlugin.cPlugin', $true)
     $staticFlags = [Reflection.BindingFlags]'Static,NonPublic'
+    $hostCheck = $pluginType.GetMethod('HostRegionalSettingsChanged', $staticFlags)
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    for ($probe = 0; $probe -lt 200; $probe++) { $null = $hostCheck.Invoke($null, [object[]]@()) }
+    $clock.Stop()
+    Assert ($clock.Elapsed.TotalSeconds -lt 2) `
+        'Repeated regional checkpoints must not re-query the process name on every snapshot record.'
     $hostWarning = $pluginType.GetMethod('HostRegionalWarningMessage', $staticFlags)
     $bridgeWarning = $hostWarning.Invoke($null, [object[]]@('CSiBridge'))
     Assert ($bridgeWarning.Contains('CSiBridge') -and -not $bridgeWarning.Contains('SAP2000')) `
@@ -663,7 +674,7 @@ try {
         Assert ($lastWrite.Kind -eq [DateTimeKind]::Utc -and $lastWrite -le [DateTime]::UtcNow) `
             'Windows regional settings last-write time was not read in UTC.'
     } finally { $regionalKey.Dispose() }
-    Write-Host 'HOST_SPECIFIC_WARNING=PASS HOST_START_REGIONAL_GUARD=PASS REGISTRY_TIMESTAMP_UTC=PASS'
+    Write-Host 'HOST_SPECIFIC_WARNING=PASS HOST_START_REGIONAL_GUARD=PASS REGISTRY_TIMESTAMP_UTC=PASS HOST_CHECK_FAST=PASS'
 } finally {
     $env:SAP_QUAD_ATOMIC_SIZE = $oldSize
     $env:SAP_QUAD_ATOMIC_CLOSE_UNAPPLIED = $oldCloseUndo

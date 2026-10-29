@@ -8,7 +8,7 @@ SAP2000, CSiBridge e le loro DLL API sono software proprietari di Computers and 
 
 Sito: <https://www.csiamerica.com/products/sap2000>
 
-## Componenti del backend binario 3.0.3
+## Componenti del backend binario 3.0.4
 
 Il codice originale FEMesh, ora MESHing, è GPL-2.0-or-later. Per il backend binario
 combinato con OpenSSL 3 (Apache-2.0) viene esercitata l'opzione GPLv3
@@ -46,7 +46,7 @@ This software is based in part on the work of the Independent JPEG Group.
 
 ## Prerequisito Microsoft esterno
 
-MESHing 3.0.3 **non include** `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll` né
+MESHing 3.0.4 **non include** `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll` né
 altre DLL separate del runtime Visual C++ Microsoft. L'installer controlla
 la versione del [Microsoft Visual C++ Redistributable x64 ufficiale](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
 (**14.42.34226.3 o successiva compatibile**). Se manca, lo scarica direttamente

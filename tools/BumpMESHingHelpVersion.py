@@ -5,6 +5,6 @@ root = Path(__file__).resolve().parent.parent / "docs" / "help-gmsh-v2"
 for language in ("it", "en"):
     page = root / f"index-{language}.html"
     text = page.read_text(encoding="utf-8")
-    if text.count("3.0.2") != 3 or "3.0.3" in text:
+    if text.count("3.0.3") != 3 or "3.0.4" in text:
         raise ValueError(f"Unexpected help version markers: {page}")
-    page.write_text(text.replace("3.0.2", "3.0.3"), encoding="utf-8")
+    page.write_text(text.replace("3.0.3", "3.0.4"), encoding="utf-8")
