@@ -52,6 +52,7 @@ namespace SapQuadTransitionPlugin
         internal readonly string[] UnpreservedDesignTables;
         private readonly string modelPath;
         private readonly byte[] digest;
+        private Action restoreCheckpoint;
         internal bool WasApplied { get; private set; }
         internal bool RestoreAttempted { get; private set; }
 
@@ -1022,13 +1023,25 @@ namespace SapQuadTransitionPlugin
         }
 
         internal void Restore(cSapModel model, IEnumerable<string> generatedAreas, IEnumerable<string> generatedPoints,
-            bool useTables)
+            bool useTables, Action checkpoint = null)
         {
-            WithAllLoadPatterns<object>(model, () =>
+            restoreCheckpoint = checkpoint;
+            try
             {
-                RestoreCore(model, generatedAreas, generatedPoints, useTables);
-                return null;
-            });
+                CheckRestoreLocale();
+                WithAllLoadPatterns<object>(model, () =>
+                {
+                    CheckRestoreLocale();
+                    RestoreCore(model, generatedAreas, generatedPoints, useTables);
+                    return null;
+                });
+            }
+            finally { restoreCheckpoint = null; }
+        }
+
+        private void CheckRestoreLocale()
+        {
+            if (restoreCheckpoint != null) restoreCheckpoint();
         }
 
         private void RestoreCore(cSapModel model, IEnumerable<string> generatedAreas, IEnumerable<string> generatedPoints,
@@ -1295,6 +1308,7 @@ namespace SapQuadTransitionPlugin
 
         private void RestoreCoreByTables(cSapModel model, IEnumerable<string> generatedAreas)
         {
+            CheckRestoreLocale();
             SnapshotData snapshot = Load(model);
             RestoreAttempted = true;
             if (model.GetModelIsLocked())
@@ -1324,6 +1338,7 @@ namespace SapQuadTransitionPlugin
             }
             if (WasApplied)
             {
+                CheckRestoreLocale();
                 PrepareAreaNameConflicts(model, areas,
                     new HashSet<string>(generatedAreas, StringComparer.OrdinalIgnoreCase));
                 Table currentAreas = PadExistingTriangles(Read(model, "Connectivity - Area"));
@@ -1352,24 +1367,29 @@ namespace SapQuadTransitionPlugin
                 Table addSections = AppendNamedRecords(Read(model, "Area Section Assignments"), tabularSections,
                     "Area", missingTabularOriginals);
                 Check(model.DatabaseTables.CancelTableEditing(), "clearing staged tables before adding original areas", "DatabaseTables.CancelTableEditing");
+                CheckRestoreLocale();
                 Stage(model, addJoints);
                 Stage(model, addAreas);
                 Stage(model, addSections);
+                CheckRestoreLocale();
                 Apply(model, "tabular original area creation", addAreas);
                 VerifyConnectivity(model, regularOriginalAreas.Fields, regularOriginalAreas.Data,
                     regularOriginalAreas.Records,
                     "tabular original area creation");
             }
             Check(model.DatabaseTables.CancelTableEditing(), "clearing staged tables before tabular Undo", "DatabaseTables.CancelTableEditing");
+            CheckRestoreLocale();
             // Keep generated joints until their child areas have been removed.
             // Omitting referenced joints in the same transaction can make SAP
             // delete every area even when ApplyEditedTables reports success.
             Stage(model, Read(model, "Joint Coordinates"));
             Stage(model, tabularAreas);
             Stage(model, tabularSections);
+            CheckRestoreLocale();
             Apply(model, "tabular geometry", tabularAreas);
             if (polygonNames.Count != 0)
             {
+                CheckRestoreLocale();
                 if (proxyPolygon != null)
                 {
                     int proxyCount = 0;
@@ -1381,6 +1401,7 @@ namespace SapQuadTransitionPlugin
                             "removing temporary polygon proxy " + proxyPolygon, "AreaObj.Delete");
                 }
                 Stage(model, joints);
+                CheckRestoreLocale();
                 Apply(model, "tabular polygon joint preparation");
                 RestoreMissingPolygonJoints(model, snapshot, areas);
                 RestoreOriginalAreas(model, areas, sections, 5);
@@ -1415,6 +1436,7 @@ namespace SapQuadTransitionPlugin
             foreach (Table table in tables.Where(item => item.Key != joints.Key && item.Key != areas.Key &&
                 item.Key != sections.Key && item.Key != "Area Material Temperatures" && IsObjectAssignment(item)))
             {
+                CheckRestoreLocale();
                 Table current;
                 try { current = Read(model, table.Key); }
                 catch (InvalidOperationException) { current = null; }
@@ -1422,7 +1444,8 @@ namespace SapQuadTransitionPlugin
                 Stage(model, table);
                 staged = true;
             }
-            if (staged) Apply(model, "tabular object assignments");
+            if (staged) { CheckRestoreLocale(); Apply(model, "tabular object assignments"); }
+            CheckRestoreLocale();
             RestoreAreaMaterialTemperatures(model, tables);
             Console.WriteLine("csv-undo-phase=assignments seconds=" + clock.Elapsed.TotalSeconds.ToString("R", CultureInfo.InvariantCulture));
 
@@ -1431,7 +1454,9 @@ namespace SapQuadTransitionPlugin
             // with child areas removed and assignments restored, can a second
             // complete joint-table import prune their orphan point objects.
             clock.Restart();
+            CheckRestoreLocale();
             Stage(model, joints);
+            CheckRestoreLocale();
             Apply(model, "tabular orphan joint cleanup");
             Console.WriteLine("csv-undo-phase=joints seconds=" + clock.Elapsed.TotalSeconds.ToString("R", CultureInfo.InvariantCulture));
 
@@ -1452,6 +1477,7 @@ namespace SapQuadTransitionPlugin
 
         private void RestoreCoreLegacy(cSapModel model, IEnumerable<string> generatedAreas, IEnumerable<string> generatedPoints)
         {
+            CheckRestoreLocale();
             SnapshotData snapshot = Load(model);
             RestoreAttempted = true;
             List<Table> tables = snapshot.Tables;
@@ -1464,22 +1490,29 @@ namespace SapQuadTransitionPlugin
             Check(model.AreaObj.GetNameList(ref areaCount, ref areaNames), "listing applied mesh areas", "AreaObj.GetNameList");
             var presentAreas = new HashSet<string>(areaNames ?? new string[0]);
             foreach (string area in generatedAreas.Distinct())
+            {
+                CheckRestoreLocale();
                 if (presentAreas.Contains(area))
                     Check(model.AreaObj.Delete(area, eItemType.Objects), "removing applied mesh area " + area, "AreaObj.Delete");
+            }
             int pointCount = 0;
             string[] pointNames = null;
             Check(model.PointObj.GetNameList(ref pointCount, ref pointNames), "listing applied mesh joints", "PointObj.GetNameList");
             var presentPoints = new HashSet<string>(pointNames ?? new string[0]);
             foreach (string point in generatedPoints.Distinct())
+            {
+                CheckRestoreLocale();
                 if (presentPoints.Contains(point))
                 {
                     Check(model.PointObj.SetSpecialPoint(point, true, eItemType.Objects), "preparing applied mesh joint removal " + point, "PointObj.SetSpecialPoint");
                     Check(model.PointObj.DeleteSpecialPoint(point, eItemType.Objects), "removing applied mesh joint " + point, "PointObj.DeleteSpecialPoint");
                 }
+            }
             Check(model.PointObj.GetNameList(ref pointCount, ref pointNames), "listing joints for CSV reconstruction", "PointObj.GetNameList");
             presentPoints = new HashSet<string>(pointNames ?? new string[0]);
             foreach (KeyValuePair<string, double[]> joint in snapshot.JointCoordinates)
             {
+                CheckRestoreLocale();
                 if (presentPoints.Contains(joint.Key)) continue;
                 string restoredName = "";
                 Check(model.PointObj.AddCartesian(joint.Value[0], joint.Value[1], joint.Value[2],
@@ -1495,11 +1528,13 @@ namespace SapQuadTransitionPlugin
             // SAP 27.2 fixes the design procedure when it creates the area, but
             // silently ignores the same assignment after AddByPoint creation.
             // Restore geometry, section and design procedure atomically.
+            CheckRestoreLocale();
             model.DatabaseTables.CancelTableEditing();
             Stage(model, tables.First(item => item.Key == "Joint Coordinates"));
             Stage(model, importAreas);
             Stage(model, originalSections);
             if (originalDesignProcedures != null) Stage(model, originalDesignProcedures);
+            CheckRestoreLocale();
             Apply(model, "geometry", importAreas);
             if (Environment.GetEnvironmentVariable("SAP_QUAD_DEBUG_SNAPSHOT") == "1")
             {
@@ -1515,6 +1550,7 @@ namespace SapQuadTransitionPlugin
                 item.Key != "Area Material Temperatures" && item.Key != "Area Design Procedures" &&
                 IsObjectAssignment(item)))
             {
+                CheckRestoreLocale();
                 Table current;
                 try { current = Read(model, table.Key); }
                 catch (InvalidOperationException) { current = null; } // An assigned table may be empty after Apply.
@@ -1524,8 +1560,10 @@ namespace SapQuadTransitionPlugin
                     assignmentsChanged = true;
                 }
             }
-            if (assignmentsChanged) Apply(model, "assignments");
+            if (assignmentsChanged) { CheckRestoreLocale(); Apply(model, "assignments"); }
+            CheckRestoreLocale();
             RestoreAreaDesignProcedures(model, tables);
+            CheckRestoreLocale();
             RestoreAreaMaterialTemperatures(model, tables);
             foreach (string key in primary)
             {

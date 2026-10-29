@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Additional permission for the separately installed SAP2000 API:
 // see SAP2000-LINKING-EXCEPTION.md.
+using Microsoft.Win32;
+using Microsoft.Win32.SafeHandles;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -37,7 +39,7 @@ namespace SapQuadTransitionPlugin
         private const int AreaObjectType = 5;
         private const int SolidObjectType = 6;
         private const int LinkObjectType = 7;
-        private const string PluginVersion = "3.0.2";
+        private const string PluginVersion = "3.0.3";
         private const string WindowTitle = "MESHing " + PluginVersion;
         private const string UpdateManifestUrl = "https://api.github.com/repos/leonardobandini/MESHing/releases/latest";
         private const string LatestDownloadUrl = "https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip";
@@ -50,6 +52,7 @@ namespace SapQuadTransitionPlugin
         private static readonly Color UiBorder = Color.FromArgb(203, 213, 225);
         private static bool useItalian;
         private static int interactiveRunActive;
+        private static int hostRegionalUnsafe;
         private static MeshOptionsDialog interactiveDialog;
 
         private static string L(string english, string italian) { return useItalian ? italian : english; }
@@ -741,7 +744,8 @@ namespace SapQuadTransitionPlugin
                 else
                     try { ShowHostModal(IntPtr.Zero, Process.GetCurrentProcess().MainWindowHandle,
                         () => MessageBox.Show(LocalizeErrorMessage(exception.Message), WindowTitle,
-                            MessageBoxButtons.OK, MessageBoxIcon.Error)); }
+                            MessageBoxButtons.OK, exception is HostRegionalSettingsChangedException
+                                ? MessageBoxIcon.Warning : MessageBoxIcon.Error)); }
                     catch (Exception displayError) { LogPluginException(displayError); }
             }
             finally { if (callback != null) callback.Finish(error); }
@@ -749,6 +753,8 @@ namespace SapQuadTransitionPlugin
 
         private static void Run(cSapModel model)
         {
+            useItalian = MeshOptionsDialog.InitialItalian();
+            if (HostRegionalSettingsChanged()) throw new HostRegionalSettingsChangedException();
             eUnits originalUnits = model.GetPresentUnits();
             eUnits databaseUnits = model.GetDatabaseUnits();
             string versionText = "";
@@ -987,9 +993,10 @@ namespace SapQuadTransitionPlugin
             IntPtr sapWindow = Process.GetCurrentProcess().MainWindowHandle;
             bool modelHasSavedFile = HasSavedModelFile(model);
             var sessionLock = new DialogModelLock(model, callbackReleasedInSap() && modelHasSavedFile);
+            MeshOptionsDialog dialog = null;
             try
             {
-                using (var dialog = new MeshOptionsDialog(lengthUnit, hasFrames, pointGroups, openingGroups,
+                using (dialog = new MeshOptionsDialog(lengthUnit, hasFrames, pointGroups, openingGroups,
                     symmetryAxes, areas.Length > 0))
                 {
                 if (callbackReleasedInSap()) interactiveDialog = dialog;
@@ -1074,6 +1081,8 @@ namespace SapQuadTransitionPlugin
                     while (dialog.Visible && !dialog.StartRequested)
                     {
                         Application.DoEvents();
+                        if (dialog.DetectRegionalChange())
+                        { dialog.AbandonForRegionalChange(); break; }
                         if (sessionLock.Active && lockClock.ElapsedMilliseconds >= 50)
                         {
                             try { sessionLock.CheckReady(); }
@@ -1113,6 +1122,15 @@ namespace SapQuadTransitionPlugin
                     }
 
                     string previewModelPath = model.GetModelFilename(true);
+                    dialog.SetRegionalModelPath(previewModelPath);
+                    dialog.SetRegionalSafetyLock(() =>
+                    {
+                        if (sessionLock.Active) sessionLock.RelockAfterWork();
+                        if (string.Equals(model.GetModelFilename(true), previewModelPath,
+                                StringComparison.OrdinalIgnoreCase) && !model.GetModelIsLocked())
+                            Check(model.SetModelIsLocked(true), "locking the unsafe preview until SAP exits",
+                                "cSapModel.SetModelIsLocked");
+                    });
                     LiveSelection appliedSelection = null;
 
                     string[] holePointNames = new string[0];
@@ -1151,6 +1169,7 @@ namespace SapQuadTransitionPlugin
                                 "Salvare il modello in un file SDB/BDB prima di generare la mesh."));
                         dialog.SetIndeterminate(L("Saving the model before meshing...", "Salvataggio del modello prima della meshatura..."));
                         int saveResult;
+                        dialog.MarkRegionalSaveStarted();
                         try { saveResult = model.File.Save(savedPath); }
                         finally { sessionLock.RelockAfterSave(); }
                         Check(saveResult, "saving the current model before generating the mesh",
@@ -1224,7 +1243,9 @@ namespace SapQuadTransitionPlugin
                         dialog.SetMeshingAreas(0, contexts.Count);
                         if (!useFastInsertion)
                         {
+                            dialog.ThrowIfCancellationRequested();
                             sessionLock.UnlockForWork();
+                            dialog.MarkRegionalModelModified();
                             insertionStarted = true;
                             foreach (PreparedMesh prepared in chosen.Meshes)
                             {
@@ -1245,7 +1266,9 @@ namespace SapQuadTransitionPlugin
                                 fastSnapshot = CaptureFastSnapshot(model);
                                 RecordFastPhase("batch-read-snapshot", snapshotClock);
                             }
+                            dialog.ThrowIfCancellationRequested();
                             sessionLock.UnlockForWork();
+                            dialog.MarkRegionalModelModified();
                             insertionStarted = true;
                             List<MeshOperation> operations = chosen.Meshes.Count == 1
                                 ? new List<MeshOperation> { ApplyMeshFast(model, chosen.Meshes[0].SourceArea,
@@ -1283,6 +1306,7 @@ namespace SapQuadTransitionPlugin
                         dialog.SetApplyBackupInfo(() => backupPath);
                         dialog.SetOnApplied(() =>
                         {
+                            dialog.ThrowIfRegionalSettingsChanged();
                             sessionLock.RelockAfterWork();
                             // Apply commits the operation. The CSV snapshot is
                             // needed for rollback only until commit succeeds;
@@ -1297,6 +1321,7 @@ namespace SapQuadTransitionPlugin
                             previewModelPath, StringComparison.OrdinalIgnoreCase));
                         dialog.SetReleasePreviewModelLock(mode =>
                         {
+                            dialog.ThrowIfRegionalSettingsChanged();
                             if (!previewLockedByPlugin) return;
                             if (!string.Equals(model.GetModelFilename(true), previewModelPath,
                                     StringComparison.OrdinalIgnoreCase) || !model.GetModelIsLocked())
@@ -1316,6 +1341,7 @@ namespace SapQuadTransitionPlugin
                             {
                                 try
                                 {
+                                dialog.ThrowIfRegionalSettingsChanged();
                                 if (useTabularUndo || designTransferLoss)
                                     csvSnapshot.Restore(model,
                                         results.SelectMany(item => item.Operation.Unchanged
@@ -1324,8 +1350,11 @@ namespace SapQuadTransitionPlugin
                                                 item.Operation.SourceArea, item.Operation.BackupArea,
                                                 item.Operation.CommitBackupArea
                                             })).Where(name => !string.IsNullOrEmpty(name)),
-                                        results.SelectMany(item => item.Operation.GeneratedPoints), useTabularUndo);
-                                else UndoAttempts(model, results, fastSnapshot, fastOriginalPoints);
+                                        results.SelectMany(item => item.Operation.GeneratedPoints), useTabularUndo,
+                                        dialog.ThrowIfRegionalSettingsChanged);
+                                else UndoAttempts(model, results, fastSnapshot, fastOriginalPoints,
+                                    dialog.ThrowIfRegionalSettingsChanged);
+                                dialog.ThrowIfRegionalSettingsChanged();
                                 RestoreSelection(model, selectedTypes, selectedNames);
                                 model.View.RefreshView(0, false);
                                 csvSnapshot.Delete();
@@ -1335,9 +1364,14 @@ namespace SapQuadTransitionPlugin
                             delegate
                             {
                                 applyClock.Restart();
-                                CommitAttempts(model, results);
-                                RenameGeneratedPointsAfterApply(model, results);
-                                RenameGeneratedAreasAfterApply(model, results, chosen.Meshes);
+                                dialog.ThrowIfRegionalSettingsChanged();
+                                CommitAttempts(model, results, dialog.ThrowIfRegionalSettingsChanged);
+                                dialog.ThrowIfRegionalSettingsChanged();
+                                RenameGeneratedPointsAfterApply(model, results, dialog.ThrowIfRegionalSettingsChanged);
+                                dialog.ThrowIfRegionalSettingsChanged();
+                                RenameGeneratedAreasAfterApply(model, results, chosen.Meshes,
+                                    dialog.ThrowIfRegionalSettingsChanged);
+                                dialog.ThrowIfRegionalSettingsChanged();
                                 VerifyAppliedObjectNames(model, results);
                                 csvSnapshot.MarkApplied();
                                 RecordApplyPhase("commit-source-areas", applyClock);
@@ -1354,6 +1388,7 @@ namespace SapQuadTransitionPlugin
                                 }
                                 catch
                                 {
+                                    dialog.ThrowIfRegionalSettingsChanged();
                                     // Commit has already removed the source areas:
                                     // restore the full CSV snapshot rather than
                                     // leaving a partly assigned final mesh.
@@ -1361,7 +1396,8 @@ namespace SapQuadTransitionPlugin
                                         results.SelectMany(item => item.Operation.GeneratedAreas.Concat(new[] {
                                             item.Operation.SourceArea, item.Operation.BackupArea, item.Operation.CommitBackupArea
                                         })).Where(name => !string.IsNullOrEmpty(name)),
-                                        results.SelectMany(item => item.Operation.GeneratedPoints), useTabularUndo);
+                                        results.SelectMany(item => item.Operation.GeneratedPoints), useTabularUndo,
+                                        dialog.ThrowIfRegionalSettingsChanged);
                                     throw;
                                 }
                                 dialog.SetGeneratedInventory(CaptureMeshInventory(model, null));
@@ -1373,6 +1409,7 @@ namespace SapQuadTransitionPlugin
                             {
                                 try
                                 {
+                                dialog.ThrowIfRegionalSettingsChanged();
                                 csvSnapshot.Restore(model,
                                     results.SelectMany(item => item.Operation.Unchanged
                                         ? Enumerable.Empty<string>()
@@ -1380,7 +1417,9 @@ namespace SapQuadTransitionPlugin
                                             item.Operation.SourceArea, item.Operation.BackupArea,
                                             item.Operation.CommitBackupArea
                                         })).Where(name => !string.IsNullOrEmpty(name)),
-                                    results.SelectMany(item => item.Operation.GeneratedPoints), useTabularUndo);
+                                    results.SelectMany(item => item.Operation.GeneratedPoints), useTabularUndo,
+                                    dialog.ThrowIfRegionalSettingsChanged);
+                                dialog.ThrowIfRegionalSettingsChanged();
                                 RestoreSelection(model, selectedTypes, selectedNames);
                                 model.View.RefreshView(0, false);
                                 }
@@ -1428,6 +1467,13 @@ namespace SapQuadTransitionPlugin
                     }
                     catch (Exception exception)
                     {
+                        if (dialog.DetectRegionalChange())
+                        {
+                            // Neither CSV nor object rollback is safe with changed
+                            // SAP table formatting. Keep the pre-mesh SDB/BDB intact.
+                            dialog.AbandonForRegionalChange();
+                            return;
+                        }
                         if (!(exception is OperationCanceledException)) LogPluginException(exception);
                         if (previewLockedByPlugin && string.Equals(model.GetModelFilename(true),
                                 previewModelPath, StringComparison.OrdinalIgnoreCase))
@@ -1450,9 +1496,11 @@ namespace SapQuadTransitionPlugin
                             if (csvSnapshot == null || (!csvSnapshot.WasApplied && !csvSnapshot.RestoreAttempted))
                             {
                                 if (csvSnapshot != null && useTabularUndo && insertionStarted)
-                                    csvSnapshot.Restore(model, new string[0], new string[0], true);
+                                    csvSnapshot.Restore(model, new string[0], new string[0], true,
+                                        dialog.ThrowIfRegionalSettingsChanged);
                                 else
-                                    UndoAttempts(model, results, fastSnapshot, fastOriginalPoints);
+                                    UndoAttempts(model, results, fastSnapshot, fastOriginalPoints,
+                                        dialog.ThrowIfRegionalSettingsChanged);
                                 if (csvSnapshot != null) csvSnapshot.Delete();
                             }
                         }
@@ -1460,6 +1508,8 @@ namespace SapQuadTransitionPlugin
                         {
                             exception = new InvalidOperationException(exception.Message + " Rollback failed: " + rollback.Message);
                         }
+                        if (dialog.DetectRegionalChange())
+                        { dialog.AbandonForRegionalChange(); return; }
                         try { RestoreSelection(model, selectedTypes, selectedNames); }
                         catch (Exception selectionRestore)
                         {
@@ -1492,6 +1542,8 @@ namespace SapQuadTransitionPlugin
                     }
                     while (dialog.Visible && !dialog.RetryRequested && dialog.UndoFailure == null)
                     {
+                        if (dialog.DetectRegionalChange())
+                        { dialog.AbandonForRegionalChange(); break; }
                         if (sessionLock.Active && lockClock.ElapsedMilliseconds >= 50)
                         {
                             try { sessionLock.CheckReady(); }
@@ -1542,6 +1594,7 @@ namespace SapQuadTransitionPlugin
                     }
                     Console.WriteLine("mesh-stage=preview-loop-ended visible=" + dialog.Visible +
                         " retry=" + dialog.RetryRequested + " undoFailure=" + (dialog.UndoFailure != null));
+                    if (dialog.RegionalUnsafe) return;
                     if (dialog.UndoFailure != null)
                     {
                         Exception undoFailure = dialog.UndoFailure;
@@ -1581,12 +1634,22 @@ namespace SapQuadTransitionPlugin
                                 "cSapModel.SetModelIsLocked");
                             previewLockedByPlugin = false;
                         }
-                        if (useTabularUndo)
-                            csvSnapshot.Restore(model, new string[0], new string[0], true);
-                        else
-                            UndoAttempts(model, results, fastSnapshot, fastOriginalPoints);
-                        RestoreSelection(model, selectedTypes, selectedNames);
-                        csvSnapshot.Delete();
+                        try
+                        {
+                            dialog.ThrowIfRegionalSettingsChanged();
+                            if (useTabularUndo)
+                                csvSnapshot.Restore(model, new string[0], new string[0], true,
+                                    dialog.ThrowIfRegionalSettingsChanged);
+                            else
+                                UndoAttempts(model, results, fastSnapshot, fastOriginalPoints,
+                                    dialog.ThrowIfRegionalSettingsChanged);
+                            dialog.ThrowIfRegionalSettingsChanged();
+                            RestoreSelection(model, selectedTypes, selectedNames);
+                            dialog.ThrowIfRegionalSettingsChanged();
+                            csvSnapshot.Delete();
+                        }
+                        catch (Exception) when (dialog.DetectRegionalChange())
+                        { dialog.AbandonForRegionalChange(); return; }
                         sessionLock.RelockAfterWork();
                     }
                     else csvSnapshot.Delete();
@@ -1598,8 +1661,20 @@ namespace SapQuadTransitionPlugin
             }
             finally
             {
+                if (dialog != null && dialog.RegionalUnsafe && dialog.RegionalModelModified)
+                {
+                    try
+                    {
+                        if (sessionLock.Active) sessionLock.RelockAfterWork();
+                        if (string.Equals(model.GetModelFilename(true), dialog.RegionalModelPath,
+                                StringComparison.OrdinalIgnoreCase) && !model.GetModelIsLocked())
+                            Check(model.SetModelIsLocked(true), "locking the unsafe preview until SAP exits",
+                                "cSapModel.SetModelIsLocked");
+                    }
+                    catch (Exception error) { LogPluginException(error); }
+                }
                 interactiveDialog = null;
-                try { sessionLock.Dispose(); }
+                try { if (dialog == null || !dialog.RegionalUnsafe || !dialog.RegionalModelModified) sessionLock.Dispose(); }
                 finally
                 {
                     if (sapWindow != IntPtr.Zero)
@@ -4251,6 +4326,7 @@ namespace SapQuadTransitionPlugin
             }
             catch
             {
+                if (progress.DetectRegionalChange()) throw;
                 UndoMesh(model, operation);
                 throw;
             }
@@ -4275,8 +4351,12 @@ namespace SapQuadTransitionPlugin
                 }
                 catch
                 {
+                    if (progress.DetectRegionalChange()) throw;
                     for (int i = objectOperations.Count - 1; i >= 0; i--)
+                    {
+                        if (progress.DetectRegionalChange()) throw;
                         UndoMesh(model, objectOperations[i], false);
+                    }
                     throw;
                 }
             }
@@ -4617,7 +4697,7 @@ namespace SapQuadTransitionPlugin
             }
             catch
             {
-                model.DatabaseTables.CancelTableEditing();
+                if (!progress.DetectRegionalChange()) model.DatabaseTables.CancelTableEditing();
                 throw;
             }
         }
@@ -4719,18 +4799,25 @@ namespace SapQuadTransitionPlugin
         }
 
         private static void UndoAttempts(cSapModel model, List<MeshAttemptResult> results, FastTableSnapshot snapshot,
-            PointSnapshot[] originalPoints)
+            PointSnapshot[] originalPoints, Action checkpoint = null)
         {
+            if (checkpoint != null) checkpoint();
             if (snapshot == null)
             {
-                for (int i = results.Count - 1; i >= 0; i--) UndoMesh(model, results[i].Operation, false);
+                for (int i = results.Count - 1; i >= 0; i--)
+                {
+                    if (checkpoint != null) checkpoint();
+                    UndoMesh(model, results[i].Operation, false);
+                }
                 return;
             }
             model.DatabaseTables.CancelTableEditing();
+            if (checkpoint != null) checkpoint();
             WriteEditableTable(model, snapshot.Joints);
             EditableTable restoredAreas = WithPaddedExistingTriangles(snapshot.Areas);
             WriteEditableTable(model, restoredAreas);
             WriteEditableTable(model, snapshot.Sections);
+            if (checkpoint != null) checkpoint();
             int fatal = 0, errors = 0, warnings = 0, information = 0; string log = "";
             Check(model.DatabaseTables.ApplyEditedTables(true, ref fatal, ref errors, ref warnings, ref information, ref log),
                 "restoring FAST tables", "DatabaseTables.ApplyEditedTables");
@@ -5059,6 +5146,101 @@ namespace SapQuadTransitionPlugin
             return separator.ToString();
         }
 
+        private sealed class HostRegionalSettingsChangedException : InvalidOperationException
+        {
+            internal HostRegionalSettingsChangedException() : base(HostRegionalWarningMessage(HostProductName())) { }
+        }
+
+        private static string HostRegionalWarningMessage(string host)
+        {
+            return L("Windows regional settings changed after this " + host + " session started. Do not use MESHing or " +
+                    "save the model in this state. Close the model without saving, exit " + host + ", then restart it. " +
+                    "Do not change regional settings while " + host + " is open.",
+                "Le impostazioni internazionali di Windows sono cambiate dopo l'avvio di questa sessione di " + host + ". " +
+                    "Non usare MESHing e non salvare il modello in questo stato. Chiudere il modello senza salvare, " +
+                    "chiudere " + host + " e riavviarlo. Non cambiare le impostazioni internazionali mentre " + host + " è aperto.");
+        }
+
+        private static bool RegionalWriteAfterHostStart(DateTime hostStartedUtc, DateTime lastWriteUtc)
+        {
+            return lastWriteUtc >= hostStartedUtc;
+        }
+
+        private static DateTime RegistryLastWriteUtc(RegistryKey key)
+        {
+            long fileTime;
+            int result = RegQueryInfoKey(key.Handle, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
+                IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
+                IntPtr.Zero, IntPtr.Zero, out fileTime);
+            if (result != 0) throw new InvalidOperationException("Cannot read the Windows regional change time: " + result);
+            return DateTime.FromFileTimeUtc(fileTime);
+        }
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+        private static extern int RegQueryInfoKey(SafeRegistryHandle key, IntPtr keyClass,
+            IntPtr classLength, IntPtr reserved, IntPtr subKeys, IntPtr maxSubKeyLength,
+            IntPtr maxClassLength, IntPtr values, IntPtr maxValueNameLength,
+            IntPtr maxValueLength, IntPtr securityDescriptor, out long lastWriteTime);
+
+        private static bool HostRegionalSettingsChanged()
+        {
+            if (!IsSupportedHostProcess()) return false;
+            if (Volatile.Read(ref hostRegionalUnsafe) != 0) return true;
+            try
+            {
+                DateTime hostStartedUtc;
+                using (Process host = Process.GetCurrentProcess())
+                    hostStartedUtc = host.StartTime.ToUniversalTime();
+                string[] paths = { @"Control Panel\International", @"Control Panel\International\User Profile",
+                    @"Control Panel\International\User Profile\Time",
+                    @"Control Panel\International\User Profile\Calendars",
+                    @"Control Panel\International\Geo" };
+                for (int index = 0; index < paths.Length; index++)
+                {
+                    using (RegistryKey key = Registry.CurrentUser.OpenSubKey(paths[index]))
+                    {
+                        if (key == null)
+                        {
+                            if (index == 0) throw new InvalidOperationException("Windows regional settings registry key is missing.");
+                            continue;
+                        }
+                        if (RegionalWriteAfterHostStart(hostStartedUtc, RegistryLastWriteUtc(key)))
+                        {
+                            Interlocked.Exchange(ref hostRegionalUnsafe, 1);
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+            catch (Exception error)
+            {
+                // If the host's culture cannot be established, never import
+                // model tables under an unverified Windows format.
+                LogPluginException(error);
+                Interlocked.Exchange(ref hostRegionalUnsafe, 1);
+                return true;
+            }
+        }
+
+        // Read Windows' live per-user overrides, not the .NET thread culture:
+        // SAP tables can change formatting without updating CurrentCulture.
+        private static string WindowsRegionalSignature()
+        {
+            uint[] fields = { 0x0000005C, 0x0000000E, 0x0000000F, 0x0000000C,
+                0x00000010, 0x00000051, 0x00000013, 0x0000001F, 0x00000020,
+                0x00001003, 0x00000014 };
+            var values = new List<string>();
+            foreach (uint field in fields)
+            {
+                var value = new StringBuilder(128);
+                if (GetLocaleInfoEx(null, field, value, value.Capacity) == 0)
+                    throw new InvalidOperationException("Cannot read the Windows regional settings for SAP tables.");
+                values.Add(value.ToString());
+            }
+            return string.Join("\u001f", values);
+        }
+
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetLocaleInfoEx(string localeName, uint localeType, StringBuilder value, int capacity);
 
@@ -5136,8 +5318,9 @@ namespace SapQuadTransitionPlugin
             if (refresh) model.View.RefreshView(0, false);
         }
 
-        private static void CommitAttempts(cSapModel model, List<MeshAttemptResult> results)
+        private static void CommitAttempts(cSapModel model, List<MeshAttemptResult> results, Action checkpoint = null)
         {
+            if (checkpoint != null) checkpoint();
             if (!results.Any(result => result.Operation.FastMode))
             {
                 var active = results.Select(result => result.Operation).Where(operation => operation.Active).ToList();
@@ -5175,12 +5358,14 @@ namespace SapQuadTransitionPlugin
             {
                 for (int i = 0; i < results.Count; i++)
                 {
+                    if (checkpoint != null) checkpoint();
                     MeshOperation operation = results[i].Operation;
                     operation.CommitBackupArea = "QTB" + token + i.ToString("D4", CultureInfo.InvariantCulture);
                     Check(model.AreaObj.ChangeName(operation.SourceArea, operation.CommitBackupArea), "preparing FAST commit", "AreaObj.ChangeName");
                     try { Check(model.AreaObj.ChangeName(operation.PrimaryGeneratedArea, operation.SourceArea), "renaming the FAST mesh area", "AreaObj.ChangeName"); }
                     catch (Exception renameFailure)
                     {
+                        if (checkpoint != null) checkpoint();
                         try { Check(model.AreaObj.ChangeName(operation.CommitBackupArea, operation.SourceArea), "rolling back the current FAST source area", "AreaObj.ChangeName"); }
                         catch (Exception rollback)
                         {
@@ -5194,6 +5379,7 @@ namespace SapQuadTransitionPlugin
             }
             catch (Exception exception)
             {
+                if (checkpoint != null) checkpoint();
                 Exception rollbackFailure = null;
                 for (int i = prepared.Count - 1; i >= 0; i--)
                 {
@@ -5219,11 +5405,13 @@ namespace SapQuadTransitionPlugin
             }
             catch (Exception exception)
             {
+                if (checkpoint != null) checkpoint();
                 Exception rollbackFailure = RollBackFastCommitNames(model, prepared);
                 if (rollbackFailure != null)
                     throw new InvalidOperationException(exception.Message + " FAST commit rollback failed: " + rollbackFailure.Message, exception);
                 throw;
             }
+            if (checkpoint != null) checkpoint();
             int deleteResult = model.AreaObj.Delete("", eItemType.SelectedObjects);
             int remainingCount = 0;
             string[] remainingNames = null;
@@ -5234,6 +5422,7 @@ namespace SapQuadTransitionPlugin
             {
                 if (retainedBackups.Count == prepared.Count)
                 {
+                    if (checkpoint != null) checkpoint();
                     Exception rollbackFailure = RollBackFastCommitNames(model, prepared);
                     if (rollbackFailure != null)
                         throw new InvalidOperationException("SAP2000 could not remove the original FAST areas and rollback failed: " + rollbackFailure.Message);
@@ -5257,8 +5446,10 @@ namespace SapQuadTransitionPlugin
             return long.TryParse(name, NumberStyles.None, CultureInfo.InvariantCulture, out number);
         }
 
-        private static void RenameGeneratedPointsAfterApply(cSapModel model, List<MeshAttemptResult> results)
+        private static void RenameGeneratedPointsAfterApply(cSapModel model, List<MeshAttemptResult> results,
+            Action checkpoint = null)
         {
+            if (checkpoint != null) checkpoint();
             string[] generated = results.SelectMany(result => result.Operation.GeneratedPoints
                 .Where(name => result.Operation.FastMode || !IsNumericObjectName(name)))
                 .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -5287,6 +5478,7 @@ namespace SapQuadTransitionPlugin
             {
                 foreach (string original in generated)
                 {
+                    if (checkpoint != null) checkpoint();
                     string numeric = (++maximum).ToString(CultureInfo.InvariantCulture);
                     if (used.Contains(numeric))
                         throw new InvalidDataException("Numeric joint name already in use: " + numeric);
@@ -5306,6 +5498,7 @@ namespace SapQuadTransitionPlugin
             }
             catch (Exception error)
             {
+                if (checkpoint != null) checkpoint();
                 Exception rollbackFailure = null;
                 for (int i = renamed.Count - 1; i >= 0; i--)
                     try
@@ -5335,8 +5528,9 @@ namespace SapQuadTransitionPlugin
         }
 
         private static void RenameGeneratedAreasAfterApply(cSapModel model,
-            List<MeshAttemptResult> results, List<PreparedMesh> meshes)
+            List<MeshAttemptResult> results, List<PreparedMesh> meshes, Action checkpoint = null)
         {
+            if (checkpoint != null) checkpoint();
             if (results.Count != meshes.Count)
                 throw new InvalidDataException("The generated mesh operations do not match their source areas.");
             string[] generated = results.SelectMany(result => result.Operation.GeneratedAreas
@@ -5370,6 +5564,7 @@ namespace SapQuadTransitionPlugin
             {
                 foreach (string original in generated)
                 {
+                    if (checkpoint != null) checkpoint();
                     string numeric = (++maximum).ToString(CultureInfo.InvariantCulture);
                     if (used.Contains(numeric))
                         throw new InvalidDataException("Numeric area name already in use: " + numeric);
@@ -5389,6 +5584,7 @@ namespace SapQuadTransitionPlugin
             }
             catch (Exception error)
             {
+                if (checkpoint != null) checkpoint();
                 Exception rollbackFailure = null;
                 for (int i = renamed.Count - 1; i >= 0; i--)
                     try
@@ -7353,23 +7549,10 @@ namespace SapQuadTransitionPlugin
             {
                 public SavedOptions() { }
                 public double SizeMeters { get; set; }
-                public double DiameterMeters { get; set; }
-                public bool Symmetric { get; set; }
-                public int SymmetryAxis { get; set; }
-                public bool Openings { get; set; }
-                public string OpeningGroup { get; set; }
-                public bool CircularHoles { get; set; }
-                public string HoleGroup { get; set; }
-                public bool Fast { get; set; }
-                public bool Backup { get; set; }
-                public bool SkipGenerateBackupWarning { get; set; }
-                public bool SkipApplyConfirmation { get; set; }
-                public bool Italian { get; set; }
-                public string ExtraOptions { get; set; }
-                public bool GmshOGrid { get; set; }
-                public bool PreserveSelectedEdges { get; set; }
+                public double MinMeters { get; set; }
+                public string Language { get; set; }
+                // Read the two sizes from settings written by earlier versions.
                 public GmshPreviewPanel.Values GmshPreview { get; set; }
-                public int GmshAlgorithmCatalogVersion { get; set; }
             }
             private static string OptionsFile { get {
                 string testPath = Environment.GetEnvironmentVariable("SAP_GMSH_V2_SETTINGS_PATH");
@@ -7378,30 +7561,58 @@ namespace SapQuadTransitionPlugin
                     "SAP2000QuadMesher", "gmsh-v2-options.json");
             } }
 
+            private static SavedOptions ReadSavedOptions()
+            {
+                try
+                {
+                    return File.Exists(OptionsFile) ? new JavaScriptSerializer().Deserialize<SavedOptions>(
+                        File.ReadAllText(OptionsFile, Encoding.UTF8)) : null;
+                }
+                catch (IOException) { return null; }
+                catch (UnauthorizedAccessException) { return null; }
+                catch (ArgumentException) { return null; }
+                catch (InvalidOperationException) { return null; }
+            }
+
+            internal static bool InitialItalian()
+            {
+                // Atomic runs must not inherit the interactive user's preferences.
+                SavedOptions saved = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE"))
+                    ? ReadSavedOptions() : null;
+                if (saved != null && saved.Language == "it") return true;
+                if (saved != null && saved.Language == "en") return false;
+                return CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "it";
+            }
+
             private void RememberOptions()
             {
                 if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE"))) return;
                 try
                 {
-                    var options = new SavedOptions {
-                        SizeMeters = MaxSize * MetersPerUnit(units),
-                        DiameterMeters = GenerateCircularHoles ? HoleDiameter * MetersPerUnit(units) : 0,
-                        Symmetric = Symmetric, SymmetryAxis = symmetryAxis.SelectedIndex,
-                        Openings = GenerateHoles, OpeningGroup = OpeningGroup,
-                        CircularHoles = GenerateCircularHoles, HoleGroup = HoleGroup,
-                        Fast = FastMode, Backup = CreateBackup, Italian = useItalian,
-                        SkipGenerateBackupWarning = skipGenerateBackupWarning,
-                        SkipApplyConfirmation = skipApplyConfirmation
-                        , ExtraOptions = gmshExtra.Text,
-                        GmshOGrid = gmshOGrid.Checked,
-                        PreserveSelectedEdges = gmshPreserveSelectedEdges.Checked,
-                        GmshAlgorithmCatalogVersion = 2,
-                        GmshPreview = gmshPreviewOptions == null ? null :
-                            gmshPreviewOptions.Capture(MetersPerUnit(units))
-                    };
+                    if (gmshPreviewOptions == null) return;
+                    double maximum, minimum;
+                    bool validMaximum = TryParseLength(gmshPreviewOptions.MaxSize.Text, units, out maximum);
+                    bool validMinimum = Regex.IsMatch(gmshPreviewOptions.MinSize.Text ?? "",
+                        @"^\s*0+(?:[.,]0+)?\s*(?:mm|cm|m|ft|in)?\s*$",
+                        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    minimum = 0;
+                    if (!validMinimum) validMinimum = TryParseLength(gmshPreviewOptions.MinSize.Text, units, out minimum);
+                    SavedOptions options = ReadSavedOptions() ?? new SavedOptions();
+                    if (validMaximum && validMinimum && minimum < maximum)
+                    {
+                        options.SizeMeters = maximum * MetersPerUnit(units);
+                        options.MinMeters = minimum * MetersPerUnit(units);
+                    }
+                    else if (options.GmshPreview != null)
+                    {
+                        if (options.SizeMeters <= 0) options.SizeMeters = options.GmshPreview.MaxMeters;
+                        options.MinMeters = options.GmshPreview.MinMeters;
+                    }
+                    options.Language = useItalian ? "it" : "en";
                     Directory.CreateDirectory(Path.GetDirectoryName(OptionsFile));
                     string temporary = OptionsFile + ".tmp";
-                    File.WriteAllText(temporary, new JavaScriptSerializer().Serialize(options), Encoding.UTF8);
+                    File.WriteAllText(temporary, new JavaScriptSerializer().Serialize(new {
+                        options.SizeMeters, options.MinMeters, options.Language }), Encoding.UTF8);
                     if (File.Exists(OptionsFile)) File.Replace(temporary, OptionsFile, null);
                     else File.Move(temporary, OptionsFile);
                 }
@@ -7411,40 +7622,21 @@ namespace SapQuadTransitionPlugin
 
             private void RestoreOptions()
             {
-                try
+                SavedOptions saved = ReadSavedOptions();
+                if (saved == null) return;
+                if (gmshPreviewOptions != null)
                 {
-                    if (!File.Exists(OptionsFile)) return;
-                    var saved = new JavaScriptSerializer().Deserialize<SavedOptions>(File.ReadAllText(OptionsFile, Encoding.UTF8));
-                    if (saved == null) return;
-                    useItalian = saved.Italian;
-                    language.SelectedIndex = useItalian ? 1 : 0;
-                    if (saved.SizeMeters > 0 && !double.IsNaN(saved.SizeMeters) && !double.IsInfinity(saved.SizeMeters))
-                        size.Text = DefaultLength(saved.SizeMeters, units);
-                    if (saved.DiameterMeters > 0 && !double.IsNaN(saved.DiameterMeters) && !double.IsInfinity(saved.DiameterMeters))
-                        holeDiameter.Text = DefaultLength(saved.DiameterMeters, units);
-                    if (hasSymmetryAxes && saved.SymmetryAxis >= 0 && saved.SymmetryAxis < symmetryAxis.Items.Count)
-                        symmetryAxis.SelectedIndex = saved.SymmetryAxis;
-                    symmetric.Checked = hasSymmetryAxes && saved.Symmetric;
-                    if (saved.OpeningGroup != null && openingGroup.Items.Contains(saved.OpeningGroup))
-                        openingGroup.SelectedItem = saved.OpeningGroup;
-                    generateHoles.Checked = saved.Openings && openingGroup.SelectedItem != null;
-                    if (saved.HoleGroup != null && holeGroup.Items.Contains(saved.HoleGroup))
-                        holeGroup.SelectedItem = saved.HoleGroup;
-                    generateCircularHoles.Checked = saved.CircularHoles && holeGroup.SelectedItem != null;
-                    fastMode.Checked = saved.Fast;
-                    createBackup.Checked = saved.Backup;
-                    skipGenerateBackupWarning = saved.SkipGenerateBackupWarning;
-                    skipApplyConfirmation = saved.SkipApplyConfirmation;
-                    gmshExtra.Text = saved.ExtraOptions ?? "";
-                    gmshOGrid.Checked = saved.GmshOGrid && generateCircularHoles.Checked;
-                    gmshPreserveSelectedEdges.Checked = saved.PreserveSelectedEdges;
-                    if (gmshPreviewOptions != null)
-                        gmshPreviewOptions.Restore(saved.GmshPreview, saved.GmshAlgorithmCatalogVersion != 2);
+                    double maximum = saved.SizeMeters > 0 ? saved.SizeMeters :
+                        saved.GmshPreview == null ? 0 : saved.GmshPreview.MaxMeters;
+                    double minimum = saved.GmshPreview == null ? saved.MinMeters :
+                        saved.GmshPreview.MinMeters;
+                    if (maximum > 0 && !double.IsNaN(maximum) && !double.IsInfinity(maximum) &&
+                        minimum >= 0 && minimum < maximum && !double.IsNaN(minimum) && !double.IsInfinity(minimum))
+                    {
+                        gmshPreviewOptions.MaxSize.Text = DefaultLength(maximum, units);
+                        gmshPreviewOptions.MinSize.Text = DefaultLength(minimum, units);
+                    }
                 }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
-                catch (ArgumentException) { }
-                catch (InvalidOperationException) { }
             }
             private readonly TextBox size = new TextBox();
             private readonly NumericUpDown edgeTolerance = new NumericUpDown();
@@ -7527,7 +7719,7 @@ namespace SapQuadTransitionPlugin
                 get
                 {
                     var options = new Dictionary<string, double>();
-                    // Do not apply persisted debug overrides while their tab
+                    // Do not apply debug overrides while their tab
                     // is hidden and the user cannot inspect or change them.
                     foreach (string raw in gmshPreviewTabs.TabPages.Contains(gmshAdvancedTab)
                         ? gmshExtra.Lines : new string[0])
@@ -7575,6 +7767,74 @@ namespace SapQuadTransitionPlugin
                 }
             }
             private bool working;
+            private string regionalSignature;
+            private string regionalModelPath;
+            private Action regionalSafetyLock;
+            private bool regionalUnsafe;
+            private bool regionalModelModified;
+            private bool regionalSaveStarted;
+            private bool regionalWarningShown;
+            public bool RegionalUnsafe { get { return regionalUnsafe; } }
+            public bool RegionalModelModified { get { return regionalModelModified; } }
+            public string RegionalModelPath { get { return regionalModelPath; } }
+            public void SetRegionalModelPath(string path) { regionalModelPath = path; }
+            public void SetRegionalSafetyLock(Action callback) { regionalSafetyLock = callback; }
+            public void BeginRegionalTransaction()
+            {
+                if (HostRegionalSettingsChanged())
+                {
+                    regionalUnsafe = true;
+                    return;
+                }
+                regionalSignature = WindowsRegionalSignature();
+                regionalModelModified = false;
+                regionalSaveStarted = false;
+            }
+            public void MarkRegionalSaveStarted() { regionalSaveStarted = true; }
+            public void MarkRegionalModelModified() { regionalModelModified = true; }
+            public bool DetectRegionalChange()
+            {
+                if (regionalUnsafe) return true;
+                if (HostRegionalSettingsChanged()) return regionalUnsafe = true;
+                if (regionalSignature == null) return false;
+                try { regionalUnsafe = regionalSignature != WindowsRegionalSignature(); }
+                catch (InvalidOperationException) { regionalUnsafe = true; }
+                return regionalUnsafe;
+            }
+            protected override void WndProc(ref Message message)
+            {
+                base.WndProc(ref message);
+                // Windows broadcasts WM_SETTINGCHANGE when the user edits the
+                // regional format. Latch it even between generation checkpoints.
+                if (message.Msg == 0x001A)
+                    DetectRegionalChange();
+            }
+            public void AbandonForRegionalChange()
+            {
+                if (!regionalUnsafe || regionalWarningShown) return;
+                regionalWarningShown = true;
+                if (regionalModelModified && regionalSafetyLock != null)
+                    try { regionalSafetyLock(); }
+                    catch (Exception error) { LogPluginException(error); }
+                StopCancellationController();
+                working = false;
+                ControlBox = true;
+                generate.Enabled = undo.Enabled = gmshResetDefault.Enabled = false;
+                string host = HostProductName();
+                string message = regionalModelModified
+                    ? L("Windows regional settings changed during this " + host + " session. The open model may contain both original and generated elements. Do not save it: saving could permanently damage the model. Close the model WITHOUT SAVING, exit " + host + " and restart it before reopening the model saved before Generate. Never change regional settings while " + host + " is open. MESHing will not Apply or Undo with incompatible table settings.",
+                        "Le impostazioni internazionali di Windows sono cambiate durante questa sessione di " + host + ". Il modello aperto può contenere elementi originali e generati. NON salvarlo: il salvataggio potrebbe compromettere definitivamente il modello. Chiudere il modello SENZA SALVARE, chiudere " + host + " e riavviarlo prima di riaprire il modello salvato prima di Genera. Non cambiare le impostazioni internazionali mentre " + host + " è aperto. MESHing non eseguirà Applica o Annulla con tabelle in un formato diverso.")
+                    : regionalSaveStarted
+                    ? L("Windows regional settings changed while " + host + " was open, possibly during the pre-mesh save. No mesh elements were inserted. Close the model WITHOUT SAVING, exit and restart " + host + ". Check the saved model before reusing it; prefer the numbered backup if its save was affected. Never change regional settings while " + host + " is open.",
+                        "Le impostazioni internazionali di Windows sono cambiate con " + host + " aperto, eventualmente durante il salvataggio pre-mesh. Nessun elemento di mesh è stato inserito. Chiudere il modello SENZA SALVARE, chiudere e riavviare " + host + ". Controllare il modello su disco prima di riutilizzarlo; preferire il backup numerato se il salvataggio è stato compromesso. Non cambiare le impostazioni internazionali mentre " + host + " è aperto.")
+                    : HostRegionalWarningMessage(host);
+                if (IsDisposed) MessageBox.Show(message, WindowTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                else
+                {
+                    ShowHostMessage(message, WindowTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    Close();
+                }
+            }
             private bool skipGenerateBackupWarning;
             private bool skipApplyConfirmation;
             private Func<string> applyBackupInfo;
@@ -8209,6 +8469,7 @@ namespace SapQuadTransitionPlugin
             public MeshOptionsDialog(string units, bool hasFrames, string[] pointGroups, string[] openingGroups,
                 SymmetryAxis[] symmetryAxes, bool hasSelectedAreas = true)
             {
+                useItalian = InitialItalian();
                 this.units = units;
                 this.hasFrames = hasFrames;
                 this.hasSelectedAreas = hasSelectedAreas;
@@ -8335,6 +8596,7 @@ namespace SapQuadTransitionPlugin
                         try { confirmed = ConfirmApply(); }
                         finally { if (!confirmed) UnlockViewportAfterCommit(); }
                         if (!confirmed) return;
+                        if (DetectRegionalChange()) { AbandonForRegionalChange(); return; }
                         Form operation = null;
                         bool showWarnings = false;
                         try
@@ -8344,6 +8606,7 @@ namespace SapQuadTransitionPlugin
                         try { readyToCommit = ReleasePreviewModelLock("Apply"); }
                         finally { if (!readyToCommit) UnlockViewportAfterCommit(); }
                         if (!readyToCommit) return;
+                        if (DetectRegionalChange()) { AbandonForRegionalChange(); return; }
                         working = true;
                         ControlBox = false;
                         generate.Enabled = details.Enabled = undo.Enabled = false;
@@ -8354,17 +8617,27 @@ namespace SapQuadTransitionPlugin
                         bool commitSucceeded = false;
                         try
                         {
+                            ThrowIfRegionalSettingsChanged();
                             applyAction();
+                            ThrowIfRegionalSettingsChanged();
                             commitSucceeded = true;
                         }
                         catch (Exception exception)
                         {
+                            if (DetectRegionalChange())
+                            {
+                                if (operation != null)
+                                { operation.Tag = true; operation.Close(); operation.Dispose(); operation = null; }
+                                AbandonForRegionalChange();
+                                return;
+                            }
                             try { appliedUndoAction(); }
                             catch (Exception rollback)
                             {
                                 exception = new InvalidOperationException(exception.Message +
                                     " CSV snapshot restore failed: " + rollback.Message, exception);
                             }
+                            if (DetectRegionalChange()) { AbandonForRegionalChange(); return; }
                             UndoFailure = exception;
                             status.Text = LocalizeErrorMessage(exception.Message);
                             if (operation != null)
@@ -8385,7 +8658,10 @@ namespace SapQuadTransitionPlugin
                             Applied = true;
                             undoAction = null;
                             applyAction = appliedUndoAction = null;
-                            if (onApplied != null) onApplied();
+                            try { if (onApplied != null) onApplied(); }
+                            catch (Exception) when (DetectRegionalChange())
+                            { AbandonForRegionalChange(); return; }
+                            regionalSignature = null;
                             onApplied = null;
                             applyBackupInfo = null;
                             snapshotPath = null;
@@ -8450,6 +8726,13 @@ namespace SapQuadTransitionPlugin
                         holeDiameter.Text = diameter.ToString("G9", CultureInfo.InvariantCulture);
                     }
                     if (!ConfirmGenerateWithoutBackup()) return;
+                    try { BeginRegionalTransaction(); }
+                    catch (InvalidOperationException error)
+                    {
+                        ShowHostMessage(error.Message, WindowTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    if (DetectRegionalChange()) { AbandonForRegionalChange(); return; }
                     RememberOptions();
                     RetryRequested = false;
                     operationClock.Restart();
@@ -8470,6 +8753,7 @@ namespace SapQuadTransitionPlugin
                         return;
                     }
                     if (undoAction == null) return;
+                    if (DetectRegionalChange()) { AbandonForRegionalChange(); return; }
                     if (!CurrentModelMatchesPreview())
                     {
                         DiscardCompletedForModelChange();
@@ -8484,6 +8768,7 @@ namespace SapQuadTransitionPlugin
                     try { readyToUndo = ReleasePreviewModelLock("Undo"); }
                     finally { if (!readyToUndo) UnlockViewportAfterCommit(); }
                     if (!readyToUndo) return;
+                    if (DetectRegionalChange()) { AbandonForRegionalChange(); return; }
                     working = true;
                     ControlBox = false;
                     undo.Enabled = false;
@@ -8491,14 +8776,18 @@ namespace SapQuadTransitionPlugin
                     SetIndeterminate(L("Restoring the original objects and selection...", "Ripristino degli oggetti originali e della selezione..."));
                     try
                     {
+                        ThrowIfRegionalSettingsChanged();
                         undoAction();
+                        ThrowIfRegionalSettingsChanged();
                         undoAction = null;
+                        regionalSignature = null;
                         qualityReport = null;
                         ResetReady();
                         if (viewportWasDisabled) AllowViewportInteraction(viewportWindow);
                     }
                     catch (Exception exception)
                     {
+                        if (DetectRegionalChange()) { AbandonForRegionalChange(); return; }
                         UndoFailure = exception;
                         status.Text = L("Undo failed.", "Annullamento non riuscito.");
                     }
@@ -8522,6 +8811,12 @@ namespace SapQuadTransitionPlugin
                 };
                 FormClosing += delegate(object sender, FormClosingEventArgs e)
                 {
+                    if (DetectRegionalChange())
+                    {
+                        if (!regionalWarningShown)
+                        { e.Cancel = true; AbandonForRegionalChange(); }
+                        return;
+                    }
                     if (working || closingPreview) { e.Cancel = true; return; }
                     if (qualityReport == null || Applied || undoAction == null || UndoFailure != null) return;
                     e.Cancel = true;
@@ -8538,6 +8833,7 @@ namespace SapQuadTransitionPlugin
                     }
                     finally { closingPreview = false; }
                 };
+                FormClosed += delegate { RememberOptions(); };
                 Controls.Add(generate); Controls.Add(details); Controls.Add(undo);
                 AddDialogFooter(this, 704, ClientSize.Width);
                 // Keep the update link centered between the GPL link and version label.
@@ -8568,12 +8864,13 @@ namespace SapQuadTransitionPlugin
                 };
                 Controls.Add(updateNotice);
                 Shown += async delegate { await CheckForUpdatesAsync(); };
-                language.SelectedIndexChanged += delegate { useItalian = language.SelectedIndex == 1; ApplyLanguage(); };
+                language.SelectedIndexChanged += delegate
+                {
+                    useItalian = language.SelectedIndex == 1;
+                    ApplyLanguage();
+                    RememberOptions();
+                };
                 ConfigureSelectionSummary();
-                // Atomic runs must use only their explicit test settings, not the
-                // last interactive options of whoever ran SAP2000 on this PC.
-                if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE")))
-                    RestoreOptions();
                 ApplyLanguage();
                 UpdateOptionState();
                 ConfigureGmshLayout();
@@ -8639,7 +8936,9 @@ namespace SapQuadTransitionPlugin
                 gmshAdvancedTab.Controls.Add(gmshEffectivePreview);
                 gmshAdvancedTab.Controls.Add(gmshAdvancedHint);
                 gmshAdvancedHint.SetBounds(12, 325, 494, 48);
-                gmshSapTab.Controls.Add(fastMode); fastMode.SetBounds(12, 35, 494, 28);
+                gmshSapTab.Controls.Add(fastMode); fastMode.SetBounds(12, 32, 494, 48);
+                fastMode.CheckAlign = ContentAlignment.TopLeft;
+                fastMode.TextAlign = ContentAlignment.TopLeft;
                 gmshSapTab.Controls.Add(createBackup); createBackup.SetBounds(12, 83, 16, 28);
                 createBackup.CheckAlign = ContentAlignment.MiddleLeft;
                 createBackup.Text = "";
@@ -9346,7 +9645,13 @@ namespace SapQuadTransitionPlugin
             }
             public void ThrowIfCancellationRequested()
             {
+                ThrowIfRegionalSettingsChanged();
                 if (CancelRequested) throw new OperationCanceledException("Mesh generation cancelled by the user.");
+            }
+            public void ThrowIfRegionalSettingsChanged()
+            {
+                if (DetectRegionalChange())
+                    throw new InvalidOperationException("Windows regional settings changed during meshing.");
             }
             public void Cancelled()
             {
@@ -9383,6 +9688,7 @@ namespace SapQuadTransitionPlugin
                 string automaticChoice,
                 Action undoMesh, Action applyMesh, Action undoAppliedMesh, string originalSnapshotPath)
             {
+                ThrowIfCancellationRequested();
                 StopCancellationController();
                 meshingActive = false;
                 elapsedTimer.Stop();
@@ -9453,6 +9759,7 @@ namespace SapQuadTransitionPlugin
                 AcceptButton = details;
                 ShowTransferWarnings();
                 Application.DoEvents();
+                ThrowIfCancellationRequested();
             }
             private string StrategyName(string strategy)
             {

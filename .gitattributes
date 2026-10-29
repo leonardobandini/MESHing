@@ -1,0 +1,6 @@
+# These upstream notices have audited byte-for-byte SHA-256 hashes. Git must
+# not translate their line endings on Windows checkout or source archives.
+licenses/CGNS-LICENSE.txt -text
+licenses/PETSC-LICENSE.txt -text
+licenses/HDF5-LICENSE.txt -text
+licenses/HDF5-LBNL-LICENSE.txt -text

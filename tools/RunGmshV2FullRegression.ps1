@@ -3,7 +3,8 @@ param([Parameter(Mandatory=$true)][string]$PluginPath,
        [Parameter(Mandatory=$true)][string]$ResultsRoot,
        [int]$CaseTimeoutSeconds = 480,
        [ValidateRange(1,36)][int]$WorkerCount = 3,
-       [string]$SapPids = '',
+        [string]$SapPids = '',
+        [switch]$Undo,
        [switch]$VerifyOnly,
        [string]$InputModelDirectory = '', [string]$ManifestPath = '', [string]$OutputSuffix = '',
        [string]$ExpectedSapVersion = '')
@@ -18,7 +19,7 @@ if (-not (Test-Path -LiteralPath $parent -PathType Container) -or
 }
 $manifestFile = if ($ManifestPath) { (Resolve-Path -LiteralPath $ManifestPath).Path }
                 else { Join-Path $root 'examples\atomic\manifest.json' }
-$manifest = @(Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json)
+[object[]]$manifest = Get-Content -LiteralPath $manifestFile -Raw | ConvertFrom-Json
 $expected = @(1..36 | ForEach-Object { 'nTEST{0:D3}' -f $_ })
 $ids = @($manifest | ForEach-Object { $_.id })
 if ($ids.Count -ne 36 -or (@(Compare-Object $expected $ids)).Count) {
@@ -33,7 +34,10 @@ if ($VerifyOnly) {
         $items = @(Import-Csv -LiteralPath (Join-Path $folder 'summary.csv'))
         $part = @($ids[($index * $groupSize)..($index * $groupSize + $groupSize - 1)])
         if ($items.Count -ne $groupSize -or @(Compare-Object $part @($items | ForEach-Object id)).Count -or
-            @($items | Where-Object status -ne 'PASS').Count) { throw "Incomplete group: $folder" }
+            @($items | Where-Object { $_.status -ne 'PASS' -or
+                $_.mode -ne $(if ($Undo) { 'UNDO' } else { 'APPLY' }) }).Count) {
+            throw "Incomplete group: $folder"
+        }
         $all += $items
         'GROUP_PASS={0} COUNT={1}' -f $folder,$groupSize
     }
@@ -75,6 +79,7 @@ try {
         $arguments += ' -ManifestPath "' + $manifestFile + '"'
         if ($OutputSuffix) { $arguments += ' -OutputSuffix "' + $OutputSuffix + '"' }
         if ($ExpectedSapVersion) { $arguments += ' -ExpectedSapVersion "' + $ExpectedSapVersion + '"' }
+        if ($Undo) { $arguments += ' -Undo' }
         $process = Start-Process powershell.exe -ArgumentList $arguments -PassThru `
             -RedirectStandardOutput $output -RedirectStandardError $errorLog
         $workers += [pscustomobject]@{ Process = $process; Folder = $folder; Ids = $part; Output = $output; Error = $errorLog }
@@ -88,7 +93,8 @@ try {
         if (-not (Test-Path -LiteralPath $summary -PathType Leaf)) { throw "Missing summary: $summary" }
         $items = @(Import-Csv -LiteralPath $summary)
         if ($items.Count -ne $groupSize -or (@(Compare-Object $worker.Ids @($items | ForEach-Object id))).Count -or
-            @($items | Where-Object status -ne 'PASS').Count) {
+            @($items | Where-Object { $_.status -ne 'PASS' -or
+                $_.mode -ne $(if ($Undo) { 'UNDO' } else { 'APPLY' }) }).Count) {
             throw "Incomplete or failing group: $summary"
         }
         if ($worker.Process.ExitCode -ne 0) {

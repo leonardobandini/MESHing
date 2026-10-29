@@ -4,7 +4,8 @@ param([Parameter(Mandatory=$true)][string]$Ids,
        [Parameter(Mandatory=$true)][string]$RunDirectory,
         [int]$CaseTimeoutSeconds = 480,
         [int]$SapPid = 0,
-       [switch]$StandardCircularHoles,
+        [switch]$StandardCircularHoles,
+        [switch]$Undo,
         [string]$InputModelDirectory = '', [string]$ManifestPath = '', [string]$OutputSuffix = '',
        [string]$ExpectedSapVersion = '')
 $ErrorActionPreference = 'Stop'
@@ -27,7 +28,8 @@ $old = @{}
 foreach ($key in @('SAP_GMSH_V2_ATOMIC_EXAMPLES','SAP_GMSH_V2_ATOMIC_OGRID',
     'SAP_GMSH_V2_ATOMIC_UI_PREVIEW','SAP_GMSH_V2_ATOMIC_UI_SCREENSHOT',
     'SAP_GMSH_V2_SETTINGS_TRACE_DIR','SAP_QUAD_COMPLETION_TRACE',
-    'SAP_GMSH_V2_ATOMIC_UI_PAUSE_MS','SAP_GMSH_V2_SETTINGS_PATH')) {
+    'SAP_GMSH_V2_ATOMIC_UI_PAUSE_MS','SAP_GMSH_V2_SETTINGS_PATH',
+    'SAP_QUAD_ATOMIC_UNDO','SAP_QUAD_UNDO_TRACE')) {
     $old[$key] = [Environment]::GetEnvironmentVariable($key)
 }
 [Reflection.Assembly]::LoadFrom($runner) | Out-Null
@@ -62,6 +64,8 @@ try {
         $env:SAP_GMSH_V2_SETTINGS_TRACE_DIR = $folder
         $env:SAP_QUAD_COMPLETION_TRACE = Join-Path $folder 'completed.txt'
         $env:SAP_GMSH_V2_SETTINGS_PATH = Join-Path $folder 'isolated-settings.json'
+        $env:SAP_QUAD_ATOMIC_UNDO = if ($Undo) { '1' } else { $null }
+        $env:SAP_QUAD_UNDO_TRACE = if ($Undo) { Join-Path $folder 'undo-method.txt' } else { $null }
         $points = if ($entry.points) { [string[]]$entry.points } else { [string[]]@() }
         $frames = if ($entry.frames) { [string[]]$entry.frames } else { [string[]]@() }
         $size = ([double]$entry.maxSize).ToString([Globalization.CultureInfo]::InvariantCulture) + 'm'
@@ -86,7 +90,8 @@ try {
         if ($failure) { [IO.File]::WriteAllText((Join-Path $folder 'failure.txt'), $failure) }
         $traces = @(Get-ChildItem -LiteralPath $folder -Filter '*-settings.json' -File)
         $results.Add([pscustomobject]@{
-            id = $id; status = if ($failure) { 'FAIL' } else { 'PASS' }
+            id = $id; mode = if ($Undo) { 'UNDO' } else { 'APPLY' }
+            status = if ($failure) { 'FAIL' } else { 'PASS' }
             backendJson = $traces.Count; screenshot = Test-Path -LiteralPath (Join-Path $folder 'new-ui.png')
             model = Test-Path -LiteralPath $outputModel
             failure = if ($failure) { $failure.Split([Environment]::NewLine)[0] } else { '' }

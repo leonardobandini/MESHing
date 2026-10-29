@@ -1,4 +1,4 @@
-# Validate the single shipped V2 UI, saved preview controls and reset behavior.
+# Validate the shipped UI, size persistence and option reset behavior.
 param([string]$Plugin = (Join-Path (Split-Path -Parent $PSScriptRoot) 'SapQuadTransitionPlugin\bin\Release\net48\SapQuadTransitionPlugin.dll'),
        [string]$ScreenshotPath = '', [string]$GmshScreenshotPath = '',
        [string]$ItalianScreenshotPath = '')
@@ -9,6 +9,8 @@ $oldSize = $env:SAP_QUAD_ATOMIC_SIZE
 $oldSettings = $env:SAP_GMSH_V2_SETTINGS_PATH
 $oldCloseUndo = $env:SAP_QUAD_ATOMIC_CLOSE_UNAPPLIED
 $oldCloseApply = $env:SAP_QUAD_ATOMIC_CLOSE_APPLY
+$oldUiCulture = [Threading.Thread]::CurrentThread.CurrentUICulture
+[Threading.Thread]::CurrentThread.CurrentUICulture = [Globalization.CultureInfo]::GetCultureInfo('en-US')
 $env:SAP_QUAD_ATOMIC_SIZE = '0.55m'
 $env:SAP_GMSH_V2_SETTINGS_PATH = Join-Path $env:TEMP ('opencode\sqm-v2-ui-' + [Guid]::NewGuid().ToString('N') + '.json')
 try {
@@ -34,7 +36,7 @@ try {
         $sourceLink = @($dialog.Controls | Where-Object {
             $_ -is [Windows.Forms.LinkLabel] -and $_.Tag -eq 'license-link'
         })
-        Assert ($dialog.Text -eq 'MESHing 3.0.2' -and $headerTitle.Text -eq 'MESHing' -and
+        Assert ($dialog.Text -eq 'MESHing 3.0.3' -and $headerTitle.Text -eq 'MESHing' -and
             $headerTitle.Left -eq 22 -and $headerTitle.Top -eq 13 -and
             $dialog.ClientSize.Width -eq 570 -and $dialog.ClientSize.Height -eq 762 -and
             $companyLogo.Count -eq 1 -and $companyLogo[0].Width -eq 46 -and
@@ -131,8 +133,10 @@ try {
                 'then save the current model to its SDB/BDB and capture the Undo snapshot. ' +
                 'The backup does not include edits that were still unsaved before Generate.') -and
             $backupBox.Text -eq '' -and $backupBox.AccessibleName -eq $backupLabel.Text -and
-            $backupBox.Height -eq (Field $dialog 'fastMode').Height -and
-            $backupBox.CheckAlign -eq (Field $dialog 'fastMode').CheckAlign -and
+            (Field $dialog 'fastMode').Height -ge 44 -and
+            (Field $dialog 'fastMode').Bottom -le $backupBox.Top -and
+            (Field $dialog 'fastMode').CheckAlign -eq [Drawing.ContentAlignment]::TopLeft -and
+            (Field $dialog 'fastMode').TextAlign -eq $backupLabel.TextAlign -and
             $backupLabel.Top -eq $backupBox.Top + 5 -and
             $backupLabel.Left -ge $backupBox.Right -and
             $backupLabel.Bottom -lt $tabs.SelectedTab.Height -and
@@ -380,6 +384,14 @@ try {
             $viewport.Contains($openingGroup.RectangleToScreen($openingGroup.ClientRectangle))) `
             'Italian additional options require scrolling or clip a control.'
         $tabs.SelectedTab = (Field $dialog 'gmshSapTab')
+        $italianFast = Field $dialog 'fastMode'
+        $fastTextHeight = [Windows.Forms.TextRenderer]::MeasureText($italianFast.Text, $italianFast.Font,
+            [Drawing.Size]::new($italianFast.Width - 28, 500),
+            [Windows.Forms.TextFormatFlags]::WordBreak).Height
+        Assert ($italianFast.Height -ge $fastTextHeight -and
+            $italianFast.TextAlign -eq [Drawing.ContentAlignment]::TopLeft -and
+            $italianFast.CheckAlign -eq [Drawing.ContentAlignment]::TopLeft) `
+            'Italian FAST text must fit below its top-aligned checkbox.'
         $backupLabel = Field $dialog 'createBackupDescription'
         $backupHeight = [Windows.Forms.TextRenderer]::MeasureText($backupLabel.Text, $backupLabel.Font,
             [Drawing.Size]::new($backupLabel.Width - 4, 500),
@@ -558,29 +570,105 @@ try {
     } finally { $rearmed.Close(); $rearmed.Dispose() }
     $env:SAP_QUAD_ATOMIC_SIZE = $null
     [IO.File]::WriteAllText($env:SAP_GMSH_V2_SETTINGS_PATH,
-        '{"Profile":0,"Tolerance":0,"Strict":true,"Regular":true,"Refined":true,"Bands":false,"MaximumCores":false,"Workers":1,"Fast":false,"Backup":false,"PreserveSelectedEdges":true,"GmshPreview":{"MaxText":"40mm","MinText":"5mm","Algorithm":5,"Recombine":true,"Recombination":0,"Optimizer":0,"Optimize":true,"SwitchOnFailure":true,"NodeRepositioning":true}}')
+        '{"SizeMeters":0.04,"Fast":false,"Backup":false,"PreserveSelectedEdges":true,"GmshPreview":{"MaxMeters":0.04,"MinMeters":0.005,"Algorithm":0,"Recombine":false,"Optimize":false}}')
     $migrated = $ctor.Invoke([object[]]@('mm', $true, [string[]]@('BOLT'),
         [string[]]@('ALL'), [Array]::CreateInstance($axis, 0), $true))
     try {
         $migrated.Show()
         [Windows.Forms.Application]::DoEvents()
         $v2 = Field $migrated 'gmshPreviewOptions'
+        $restoredSettings = $migrated.GmshSettingsJson | ConvertFrom-Json
         Assert (-not $migrated.StrictMaximumSize -and $migrated.EdgeTolerancePercent -eq 20 -and
             -not $migrated.PreferRegularMesh -and -not $migrated.StressRefinement -and
             $migrated.StructuredSectorBands -and (Field $migrated 'useMaximumCores').Checked -and
             (Field $migrated 'profiles').SelectedIndex -eq 2 -and
-            $v2.GetType().GetField('maxSize',$flags).GetValue($v2).Text -eq '40mm' -and
-            $v2.GetType().GetField('minSize',$flags).GetValue($v2).Text -eq '5mm' -and
-            (Field $migrated 'gmshPreserveSelectedEdges').Checked -and
-            ($migrated.GmshSettingsJson | ConvertFrom-Json).preserveSelectedEdges -and
-            -not (Field $migrated 'fastMode').Checked -and -not (Field $migrated 'createBackup').Checked) `
-            'Saved legacy settings still change hidden V2 meshing options or visible preferences were lost.'
-        Write-Host 'LEGACY_PREFERENCES_IGNORED=PASS VISIBLE_PREFERENCES_RESTORED=PASS'
+            $v2.GetType().GetField('maxSize',$flags).GetValue($v2).Text -eq '40' -and
+            $v2.GetType().GetField('minSize',$flags).GetValue($v2).Text -eq '5' -and
+            -not (Field $migrated 'gmshPreserveSelectedEdges').Checked -and
+            $restoredSettings.preserveSelectedEdges -eq $false -and
+            (Field $migrated 'fastMode').Checked -and (Field $migrated 'createBackup').Checked -and
+            $restoredSettings.algorithm -eq 8 -and $restoredSettings.recombine -and $restoredSettings.optimize) `
+            'A new window must restore only mesh sizes and reset every other option.'
+        $migrated.Close()
+        $savedSizes = Get-Content -LiteralPath $env:SAP_GMSH_V2_SETTINGS_PATH -Raw | ConvertFrom-Json
+        Assert ($savedSizes.SizeMeters -eq 0.04 -and $savedSizes.MinMeters -eq 0.005 -and
+            $savedSizes.Language -eq 'en' -and @($savedSizes.PSObject.Properties).Count -eq 3) `
+            "The settings file must contain only two sizes and language: $($savedSizes | ConvertTo-Json -Compress)"
+        Write-Host 'LEGACY_SIZES_RESTORED=PASS OPTIONS_RESET=PASS ONLY_SIZES_AND_LANGUAGE_SAVED=PASS'
     } finally { $migrated.Close(); $migrated.Dispose() }
+    $edited = $ctor.Invoke([object[]]@('mm', $true, [string[]]@('BOLT'),
+        [string[]]@('ALL'), [Array]::CreateInstance($axis, 0), $true))
+    try {
+        $edited.Show()
+        $panel = Field $edited 'gmshPreviewOptions'
+        $panel.GetType().GetField('maxSize',$flags).GetValue($panel).Text = '60'
+        $panel.GetType().GetField('minSize',$flags).GetValue($panel).Text = '6'
+        (Field $edited 'language').SelectedIndex = 1
+        (Field $edited 'gmshPreserveSelectedEdges').Checked = $true
+        Assert ((Field $edited 'gmshPreserveSelectedEdges').Checked) 'Options must remain set within an open window.'
+    } finally { $edited.Close(); $edited.Dispose() }
+    $reopened = $ctor.Invoke([object[]]@('mm', $true, [string[]]@('BOLT'),
+        [string[]]@('ALL'), [Array]::CreateInstance($axis, 0), $true))
+    try {
+        $reopened.Show()
+        $panel = Field $reopened 'gmshPreviewOptions'
+        Assert ($panel.GetType().GetField('maxSize',$flags).GetValue($panel).Text -eq '60' -and
+            $panel.GetType().GetField('minSize',$flags).GetValue($panel).Text -eq '6' -and
+            (Field $reopened 'language').SelectedIndex -eq 1 -and
+            -not (Field $reopened 'gmshPreserveSelectedEdges').Checked) `
+            'Reopening must retain edited sizes and the selected language, but reset other options.'
+        Write-Host 'CLOSE_WITHOUT_GENERATE_SAVES_SIZES=PASS REOPEN_RETAINS_LANGUAGE_RESETS_OPTIONS=PASS'
+    } finally { $reopened.Close(); $reopened.Dispose() }
+    [IO.File]::WriteAllText($env:SAP_GMSH_V2_SETTINGS_PATH, '{"SizeMeters":0.04,"MinMeters":0.005}')
+    [Threading.Thread]::CurrentThread.CurrentUICulture = [Globalization.CultureInfo]::GetCultureInfo('it-IT')
+    $systemLanguage = $ctor.Invoke([object[]]@('mm', $true, [string[]]@('BOLT'),
+        [string[]]@('ALL'), [Array]::CreateInstance($axis, 0), $true))
+    try {
+        Assert ((Field $systemLanguage 'language').SelectedIndex -eq 1) `
+            'Without a saved language, the system UI language must be used.'
+    } finally { $systemLanguage.Dispose() }
+    [Threading.Thread]::CurrentThread.CurrentUICulture = [Globalization.CultureInfo]::GetCultureInfo('en-US')
+    Write-Host 'SYSTEM_UI_LANGUAGE_FALLBACK=PASS'
+    $regionGuard = $ctor.Invoke([object[]]@('mm', $true, [string[]]@('BOLT'),
+        [string[]]@('ALL'), [Array]::CreateInstance($axis, 0), $true))
+    try {
+        $regionGuard.BeginRegionalTransaction()
+        Assert (-not $regionGuard.DetectRegionalChange()) 'Unchanged Windows settings must permit generation.'
+        $regionField = $type.GetField('regionalSignature', $flags)
+        $originalSignature = $regionField.GetValue($regionGuard)
+        $regionField.SetValue($regionGuard, 'changed-regional-settings')
+        Assert ($regionGuard.DetectRegionalChange() -and $regionGuard.RegionalUnsafe -and
+            -not $regionGuard.RegionalModelModified) 'Regional change before model modification was not detected.'
+        $regionField.SetValue($regionGuard, $originalSignature)
+        Assert ($regionGuard.DetectRegionalChange()) 'A transient regional change must remain unsafe after reverting.'
+        $regionGuard.MarkRegionalModelModified()
+        Assert ($regionGuard.RegionalModelModified) 'The recovery warning must distinguish an altered model.'
+        Write-Host 'REGIONAL_CHANGE_DETECTED=PASS TRANSIENT_CHANGE_STAYS_UNSAFE=PASS'
+    } finally { $regionGuard.Dispose() }
+    $pluginType = $assembly.GetType('SapQuadTransitionPlugin.cPlugin', $true)
+    $staticFlags = [Reflection.BindingFlags]'Static,NonPublic'
+    $hostWarning = $pluginType.GetMethod('HostRegionalWarningMessage', $staticFlags)
+    $bridgeWarning = $hostWarning.Invoke($null, [object[]]@('CSiBridge'))
+    Assert ($bridgeWarning.Contains('CSiBridge') -and -not $bridgeWarning.Contains('SAP2000')) `
+        'The regional warning must mention only the host that launched MESHing.'
+    $laterThanHost = $pluginType.GetMethod('RegionalWriteAfterHostStart', $staticFlags)
+    $started = [DateTime]::UtcNow.AddHours(-1)
+    Assert (-not $laterThanHost.Invoke($null, [object[]]@($started, $started.AddTicks(-1))) -and
+        $laterThanHost.Invoke($null, [object[]]@($started, $started.AddTicks(1)))) `
+        'Windows regional changes must be compared to the current host process start time.'
+    $regionalKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Control Panel\International')
+    try {
+        $lastWrite = $pluginType.GetMethod('RegistryLastWriteUtc', $staticFlags).Invoke(
+            $null, [object[]]@($regionalKey))
+        Assert ($lastWrite.Kind -eq [DateTimeKind]::Utc -and $lastWrite -le [DateTime]::UtcNow) `
+            'Windows regional settings last-write time was not read in UTC.'
+    } finally { $regionalKey.Dispose() }
+    Write-Host 'HOST_SPECIFIC_WARNING=PASS HOST_START_REGIONAL_GUARD=PASS REGISTRY_TIMESTAMP_UTC=PASS'
 } finally {
     $env:SAP_QUAD_ATOMIC_SIZE = $oldSize
     $env:SAP_QUAD_ATOMIC_CLOSE_UNAPPLIED = $oldCloseUndo
     $env:SAP_QUAD_ATOMIC_CLOSE_APPLY = $oldCloseApply
     if (Test-Path -LiteralPath $env:SAP_GMSH_V2_SETTINGS_PATH) { Remove-Item -LiteralPath $env:SAP_GMSH_V2_SETTINGS_PATH -Force }
     $env:SAP_GMSH_V2_SETTINGS_PATH = $oldSettings
+    [Threading.Thread]::CurrentThread.CurrentUICulture = $oldUiCulture
 }

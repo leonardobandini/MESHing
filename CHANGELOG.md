@@ -1,5 +1,12 @@
 # MESHing — changelog
 
+## MESHing 3.0.3 — impostazioni della sessione e protezione del formato regionale
+
+- Alla riapertura, le opzioni della mesh tornano ai default; rimangono soltanto le dimensioni minima/massima e l'ultima lingua scelta. Senza preferenza salvata si usa la lingua dell'interfaccia di sistema. Durante la stessa sessione aperta le opzioni restano disponibili per generazioni consecutive.
+- Nelle opzioni di trasferimento, la voce FAST in italiano è allineata in alto con il checkbox e non taglia il testo su due righe.
+- Prima di aprire il plugin e durante la sessione viene controllata l'ultima modifica delle impostazioni internazionali di Windows rispetto all'avvio del processo SAP2000 o CSiBridge. In caso di cambio, il messaggio nomina solo l'host corrente e chiede di chiudere modello e host senza salvare, quindi di riavviare l'applicazione. Durante la generazione vengono bloccati Applica, Annulla e i rollback incompatibili; se il salvataggio pre-mesh era in corso viene segnalata anche la verifica del file salvato/backup.
+- Rilascio stabile, non una build di test. La matrice di regressione è composta da 36 casi Apply e 36 Undo su ciascuno dei due host, ripartiti su tre processi persistenti per host; i risultati finali della build pubblicata sono documentati in `docs/MESHING_3_0_3_RELEASE.md`.
+
 ## MESHing 3.0.2 — finestre delle impostazioni e formati numerici SAP2000/CSiBridge
 
 - I dialoghi modali delle impostazioni degli algoritmi di mesh e ottimizzazione restano davanti alla finestra principale fino a OK o Annulla; il blocco dell'host durante il dialogo è preservato.
