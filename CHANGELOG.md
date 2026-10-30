@@ -1,5 +1,15 @@
 # MESHing — changelog
 
+## MESHing 3.0.6 — release Latest
+
+- Genera completa anche l'applicazione della mesh: non esiste più la commutazione del pulsante in Applica. Annulla mesh resta disponibile per la generazione più recente fino a una nuova generazione o alla chiusura del plugin.
+- Con una nuova selezione di aree, Genera si riabilita. Prima di una generazione successiva nello stesso modello compare un avviso OK/Annulla, disattivabile per la sessione: il modello viene salvato e l'Undo precedente è sostituito da quello della nuova mesh.
+- Chiudendo MESHing dopo Genera viene avvisato che l'Undo non sarà più disponibile; la mesh è ancora in memoria e chiudere il modello host senza salvarlo riapre lo stato su disco precedente all'ultima generazione.
+- Dopo Annulla mesh, il riblocco del file pre-mesh riaperto è trattato come parte del ripristino del plugin: non deve far comparire l'avviso di sblocco manuale in assenza di un intervento dell'utente.
+- Il riepilogo di elementi creati e tempo impiegato rimane visibile dopo Genera e l'applicazione automatica, fino alla selezione di una nuova area.
+- La scheda Opzioni di backup contiene soltanto il backup numerato, attivo per impostazione predefinita. FAST è automatico dove supportato; restano l'inserimento di compatibilità e gli avvisi per backup disattivato.
+- La matrice ridotta di rilascio ha passato 6/6 Genera in SAP2000 e 6/6 in CSiBridge con tre istanze concorrenti per host; la prova mirata di due Genera nello stesso modello SAP2000 è riuscita. Per la release precedente la matrice completa Apply/Undo aveva verificato 144/144 casi.
+
 ## MESHing 3.0.5 — release pubblicata, non contrassegnata "Latest"
 
 - In SAP2000 FAST Genera inserisce direttamente nodi/aree numerati e rimuove in batch le aree originali; Applica conferma la mesh e Annulla mesh ricarica l'SDB salvato prima della generazione. Se l'SDB è stato modificato sul disco, il ripristino si ferma e conserva la copia privata.

@@ -105,8 +105,8 @@ def main():
                 'alt="' + ('MESHing logo' if name.endswith('-en.html') else 'Logo MESHing') + '"' not in text):
             raise ValueError(name + ': missing MESHing help logo or accessible description')
         if 'in preparation' in text.lower() or 'in preparazione' in text.lower():
-            raise ValueError(name + ': prerelease label in the MESHing 3.0.5 help')
-        for marker in ((('MESHing version · 3.0.5' if name.endswith('-en.html') else 'Versione MESHing · 3.0.5'), 'leonardo@csi-italia.eu', 'Mesh.MeshSizeMin', 'Mesh.Smoothing', 'Mesh.AlgorithmSwitchOnFailure',
+            raise ValueError(name + ': prerelease label in the MESHing 3.0.6 help')
+        for marker in ((('MESHing version · 3.0.6' if name.endswith('-en.html') else 'Versione MESHing · 3.0.6'), 'leonardo@csi-italia.eu', 'Mesh.MeshSizeMin', 'Mesh.Smoothing', 'Mesh.AlgorithmSwitchOnFailure',
                           'https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist',
                           'https://gmsh.info/', 'C. Geuzaine', 'J.-F. Remacle',
                           'Gmsh attribution.' if name.endswith('-en.html') else 'Attribuzione Gmsh.',
@@ -115,12 +115,12 @@ def main():
                           'Mesh.QuadqsSizemapMethod', 'Mesh.RecombineNodeRepositioning',
                           'Mesh.RecombineOptimizeTopology',
                           'Prefer regular (grid-aligned) mesh when possible' if name.endswith('-en.html') else 'Preferisci mesh regolari allineate alla griglia',
-                              '<footer><small>Version: <strong>3.0.5</strong></small>' if name.endswith('-en.html') else '<footer><small>Versione: <strong>3.0.5</strong></small>',
+                               '<footer><small>Version: <strong>3.0.6</strong></small>' if name.endswith('-en.html') else '<footer><small>Versione: <strong>3.0.6</strong></small>',
                           'Additional options' if name.endswith('-en.html') else 'Opzioni aggiuntive',
-                          'Transfer options' if name.endswith('-en.html') else 'Opzioni di trasferimento',
-                          'Do not show this backup warning again' if name.endswith('-en.html') else 'Non mostrare più questo avviso sul backup',
-                          'Do not show this Apply confirmation again' if name.endswith('-en.html') else 'Non mostrare più questa conferma di Applica',
-                            'source areas remain visible' if name.endswith('-en.html') else 'aree originali restano visibili')
+                           'Backup options' if name.endswith('-en.html') else 'Opzioni di backup',
+                           'disabled numbered backups' if name.endswith('-en.html') else 'backup disattivato',
+                           'Do not show this warning again in this session' if name.endswith('-en.html') else 'Non mostrare più questo avviso in questa sessione',
+                           'Closing MESHing' if name.endswith('-en.html') else 'Chiudendo MESHing')
                         ):
             if marker not in text:
                 raise ValueError(name + ': undocumented feature ' + marker)

@@ -1,4 +1,4 @@
-// Run Generate -> Apply -> open another SDB -> select -> Generate -> Undo
+// Run Generate -> new selection/model -> Generate in one modeless dialog.
 // against an owned SAP2000 process and disposable copies only.
 using System;
 using System.Diagnostics;
@@ -92,22 +92,23 @@ internal sealed class TestV2ModelSwitch
                 object panel = Field(dialog, "gmshPreviewOptions");
                 ((TextBox)panel.GetType().GetField("maxSize", BindingFlags.Instance | BindingFlags.NonPublic)
                     .GetValue(panel)).Text = "0.4m";
-                ((CheckBox)Field(dialog, "createBackup")).Checked = false;
+                // Keep the default numbered backup enabled; this integration
+                // test is about consecutive generations, not the separate
+                // disabled-backup confirmation dialog.
                 ClickGenerate(generate);
                 stage = 1;
                 Console.WriteLine("FIRST_MODEL_GENERATE=PASS");
             }
-            else if (stage == 1 && report != null && generate.Text == "Apply")
+            else if (stage == 1 && report != null &&
+                     (bool)dialogType.GetProperty("Applied").GetValue(dialog))
             {
                 stage = 11;
-                string snapshot = (string)Field(dialog, "snapshotPath");
-                dialogType.GetMethod("ApplyForAutomation").Invoke(dialog, new object[0]);
-                if (!(bool)dialogType.GetProperty("Applied").GetValue(dialog) || undo.Enabled ||
-                    File.Exists(snapshot))
-                    throw new InvalidOperationException("Apply retained an Undo command or previous-model snapshot.");
+                if (!undo.Enabled || (generate.Text != "Generate" && generate.Text != "Genera"))
+                    throw new InvalidOperationException("Generate did not retain Undo: enabled=" + undo.Enabled +
+                        " text=" + generate.Text);
                 firstAppliedAreaCount = AreaCount();
                 stage = 2;
-                Console.WriteLine("FIRST_MODEL_APPLY=PASS OLD_UNDO_DISABLED=PASS SNAPSHOT_RELEASED=PASS");
+                Console.WriteLine("FIRST_MODEL_GENERATE_COMMITS=PASS UNDO_RETAINED=PASS");
             }
             else if (stage == 2)
             {
@@ -133,8 +134,8 @@ internal sealed class TestV2ModelSwitch
                 stage = 3;
                 Console.WriteLine(sameModel ? "SAME_MODEL_NEW_AREA_SELECTED=PASS" : "SECOND_MODEL_OPEN_AND_SELECT=PASS");
             }
-            else if (stage == 3 && !(bool)dialogType.GetProperty("Applied").GetValue(dialog) &&
-                     generate.Enabled && !undo.Enabled && report == null)
+            else if (stage == 3 && generate.Enabled &&
+                     (sameModel ? undo.Enabled && report != null : !undo.Enabled && report == null))
             {
                 if (!string.Equals(model.GetModelFilename(true), sameModel ? first : second,
                     StringComparison.OrdinalIgnoreCase))
@@ -155,22 +156,26 @@ internal sealed class TestV2ModelSwitch
                         " DATABASE_UNITS=" + model.GetDatabaseUnits());
                 }
                 stage = 13;
+                if (sameModel)
+                    dialogType.GetField("skipNextGenerationWarning", BindingFlags.Instance | BindingFlags.NonPublic)
+                        .SetValue(dialog, true); // This test chooses OK; UI prompt is tested separately.
                 ClickGenerate(generate);
                 stage = 4;
-                Console.WriteLine("SECOND_MODEL_SELECTION_REFRESH=PASS OLD_UNDO_DISABLED=PASS SECOND_GENERATE=PASS");
+                Console.WriteLine("SECOND_MODEL_SELECTION_REFRESH=PASS SECOND_GENERATE=PASS");
             }
-            else if (stage == 4 && report != null && generate.Text == "Apply")
+            else if (stage == 4 && report != null &&
+                     (bool)dialogType.GetProperty("Applied").GetValue(dialog))
             {
                 stage = 14;
-                string snapshot = (string)Field(dialog, "snapshotPath");
-                dialogType.GetMethod("ApplyForAutomation").Invoke(dialog, new object[0]);
-                if (!(bool)dialogType.GetProperty("Applied").GetValue(dialog) || undo.Enabled ||
-                    File.Exists(snapshot) || AreaCount() < (sameModel ? firstAppliedAreaCount : 2))
-                    throw new InvalidOperationException("Second mesh was not committed or its snapshot was retained.");
+                if (!undo.Enabled ||
+                    AreaCount() < (sameModel ? firstAppliedAreaCount : 2))
+                    throw new InvalidOperationException("Second Generate did not commit or retain its Undo.");
                 stage = 6;
                 timer.Stop();
+                Environment.SetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE", "0.4m");
                 dialog.Close();
-                Console.WriteLine("SECOND_MODEL_APPLY=PASS UNDO_DISABLED=PASS SNAPSHOT_RELEASED=PASS");
+                Environment.SetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE", null);
+                Console.WriteLine("SECOND_MODEL_GENERATE_COMMITS=PASS UNDO_RETAINED=PASS");
             }
         }
         catch (Exception error)
@@ -231,8 +236,9 @@ internal sealed class TestV2ModelSwitch
                     throw new InvalidOperationException("Incomplete cross-model workflow: " + test.stage);
                 if (differentUnits && sap.SapModel.GetPresentUnits() != eUnits.kN_cm_C)
                     throw new InvalidDataException("Plugin did not restore the new model's centimetre display units.");
-                if (!firstHash.SequenceEqual(Hash(first)) || !secondHash.SequenceEqual(Hash(second)))
-                    throw new InvalidDataException("A source model copy was unexpectedly saved.");
+                if ((sameModel ? firstHash.SequenceEqual(Hash(first)) : !firstHash.SequenceEqual(Hash(first))) ||
+                    !secondHash.SequenceEqual(Hash(second)))
+                    throw new InvalidDataException("Generate saved an unexpected model file.");
                 Console.WriteLine((sameModel ? "V2_SAME_MODEL_REFRESH=PASS" : "V2_CROSS_MODEL_REFRESH=PASS") +
                     " ORIGINAL_COPIES_UNCHANGED=PASS");
                 return 0;

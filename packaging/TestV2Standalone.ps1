@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Verify that the ZIP is self-contained after extraction, without repository paths.
-param([string]$Zip = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts\MESHing-3.0.5.zip'))
+param([string]$Zip = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts\MESHing-3.0.6.zip'))
 $ErrorActionPreference = 'Stop'
 $version = [regex]::Match([IO.Path]::GetFileName($Zip), '^MESHing-(3\.\d+\.\d+)\.zip$').Groups[1].Value
 if (-not $version) { throw 'Expected a versioned MESHing ZIP.' }

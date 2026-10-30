@@ -39,7 +39,7 @@ namespace SapQuadTransitionPlugin
         private const int AreaObjectType = 5;
         private const int SolidObjectType = 6;
         private const int LinkObjectType = 7;
-        private const string PluginVersion = "3.0.5";
+        private const string PluginVersion = "3.0.6";
         private const string WindowTitle = "MESHing " + PluginVersion;
         private const string UpdateManifestUrl = "https://api.github.com/repos/leonardobandini/MESHing/releases/latest";
         private const string LatestDownloadUrl = "https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip";
@@ -949,6 +949,23 @@ namespace SapQuadTransitionPlugin
                 temporaryUnlock = false;
             }
 
+            internal void RelockAfterRestore()
+            {
+                if (!active) return;
+                if (!string.Equals(model.GetModelFilename(true), modelPath, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("The active model changed while restoring the pre-mesh file.");
+                if (externalUnlock)
+                    throw new InvalidOperationException("An external model unlock was observed during restoration.");
+                // OpenFile may leave the restored model unlocked even when the
+                // pre-mesh transaction itself finished with the lock in place.
+                // This is still MESHing's own file reload, not a user click.
+                if (!model.GetModelIsLocked())
+                    Check(model.SetModelIsLocked(true), "relocking the reopened pre-mesh model",
+                        "cSapModel.SetModelIsLocked");
+                if (!model.GetModelIsLocked())
+                    throw new InvalidOperationException("SAP2000 did not lock the reopened pre-mesh model.");
+            }
+
             public void Dispose()
             {
                 if (!owned || !string.Equals(model.GetModelFilename(true), modelPath,
@@ -1357,16 +1374,14 @@ namespace SapQuadTransitionPlugin
                         {
                             dialog.ThrowIfRegionalSettingsChanged();
                             sessionLock.RelockAfterWork();
-                            // Apply commits the operation. The CSV snapshot is
-                            // needed for rollback only until commit succeeds;
-                            // it must not be usable against another SAP model.
-                            if (!directCommit) csvSnapshot.Delete();
-                            diskCheckpoint.Delete();
-                            RecordApplyPhase(directCommit ? "release-saved-model-checkpoint" :
-                                "delete-snapshot-file", applyClock);
                             if (!automatedExample)
                                 try { appliedSelection = new LiveSelection(model); }
                                 catch (Exception error) { LogPluginException(error); }
+                        });
+                        dialog.SetReleaseCompletedUndo(() =>
+                        {
+                            if (csvSnapshot != null) csvSnapshot.Delete();
+                            diskCheckpoint.Delete();
                         });
                         dialog.SetCompletedModelGuard(() => string.Equals(model.GetModelFilename(true),
                             previewModelPath, StringComparison.OrdinalIgnoreCase));
@@ -1394,37 +1409,25 @@ namespace SapQuadTransitionPlugin
                                 try
                                 {
                                 dialog.ThrowIfRegionalSettingsChanged();
-                                Stopwatch reloadClock = directCommit ? Stopwatch.StartNew() : null;
-                                if (directCommit)
-                                {
-                                    diskCheckpoint.Restore(model);
-                                    RecordPhase("csharp-undo-phases.csv", "reload-pre-mesh-model", reloadClock);
-                                }
-                                else if (useTabularUndo || designTransferLoss)
-                                    csvSnapshot.Restore(model,
-                                        results.SelectMany(item => item.Operation.Unchanged
-                                            ? Enumerable.Empty<string>()
-                                            : item.Operation.GeneratedAreas.Concat(new[] {
-                                                item.Operation.SourceArea, item.Operation.BackupArea,
-                                                item.Operation.CommitBackupArea
-                                            })).Where(name => !string.IsNullOrEmpty(name)),
-                                        results.SelectMany(item => item.Operation.GeneratedPoints), useTabularUndo,
-                                        dialog.ThrowIfRegionalSettingsChanged);
-                                else UndoAttempts(model, results, fastSnapshot, fastOriginalPoints,
-                                    dialog.ThrowIfRegionalSettingsChanged);
+                                Stopwatch reloadClock = Stopwatch.StartNew();
+                                // Generate has already completed the mesh on every
+                                // host. Reopen its saved pre-mesh model for Undo,
+                                // including unchanged and Standard fallback areas.
+                                diskCheckpoint.Restore(model);
+                                RecordPhase("csharp-undo-phases.csv", "reload-pre-mesh-model", reloadClock);
                                 dialog.ThrowIfRegionalSettingsChanged();
                                 RestoreSelection(model, selectedTypes, selectedNames);
                                 model.View.RefreshView(0, false);
-                                if (directCommit)
+                                RecordPhase("csharp-undo-phases.csv", "restore-selection-and-view", reloadClock);
+                                if (csvSnapshot != null) csvSnapshot.Delete();
+                                diskCheckpoint.Delete();
+                                RecordPhase("csharp-undo-phases.csv", "delete-pre-mesh-copy", reloadClock);
+                                }
+                                finally
                                 {
-                                    RecordPhase("csharp-undo-phases.csv", "restore-selection-and-view", reloadClock);
-                                    diskCheckpoint.Delete();
-                                    RecordPhase("csharp-undo-phases.csv", "delete-pre-mesh-copy", reloadClock);
+                                    sessionLock.RelockAfterWork();
+                                    sessionLock.RelockAfterRestore();
                                 }
-                                else csvSnapshot.Delete();
-                                if (!directCommit) diskCheckpoint.Delete();
-                                }
-                                finally { sessionLock.RelockAfterWork(); }
                             },
                             delegate
                             {
@@ -1502,6 +1505,14 @@ namespace SapQuadTransitionPlugin
                                 }
                                 finally { sessionLock.RelockAfterWork(); }
                             }, directCommit ? diskCheckpoint.Path : csvSnapshot.Path);
+                        // Generate also commits the mesh. Keep the pre-mesh
+                        // checkpoint until Undo, the next Generate or Close.
+                        if (dialog.Visible && !dialog.IsDisposed)
+                        {
+                            dialog.CommitForGeneration();
+                            if (dialog.UndoFailure != null) throw dialog.UndoFailure;
+                            if (!automatedExample) refreshSelection(true);
+                        }
                         model.View.RefreshView(0, false);
                         if (automaticChoice != null && !automatedExample)
                             dialog.ShowAutomaticChoice(automaticChoice, generatedAreaCount, chosen.TriangleCount,
@@ -1521,7 +1532,7 @@ namespace SapQuadTransitionPlugin
                         }
                         if (automatedExample && Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_UNDO") == "1")
                         {
-                            if (!directCommit && Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_APPLY_BEFORE_UNDO") == "1")
+                            if (!dialog.Applied && !directCommit && Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_APPLY_BEFORE_UNDO") == "1")
                             {
                                 int beforeApply = 0, afterApply = 0;
                                 string[] inspectedAreas = null;
@@ -1643,9 +1654,8 @@ namespace SapQuadTransitionPlugin
                             }
                             finally { lockClock.Restart(); }
                         }
-                        // Apply has already released the transaction snapshot;
-                        // keep the quality report visible until the user selects
-                        // another area or opens a different SDB, then rearm.
+                        // The completed generation keeps its Undo available
+                        // while the selection changes for the next operation.
                         if (!automatedExample && selectionClock.ElapsedMilliseconds >= 350)
                         {
                             try
@@ -1653,16 +1663,7 @@ namespace SapQuadTransitionPlugin
                                 if (!string.Equals(model.GetModelFilename(true), previewModelPath,
                                     StringComparison.OrdinalIgnoreCase))
                                     dialog.DiscardCompletedForModelChange();
-                                else if (dialog.Applied)
-                                {
-                                    LiveSelection current = new LiveSelection(model);
-                                    if (appliedSelection == null) appliedSelection = current;
-                                    else if (!current.SameObjects(appliedSelection))
-                                    {
-                                        dialog.RearmAppliedForNewSelection();
-                                        refreshSelection(true);
-                                    }
-                                }
+                                else if (dialog.Applied) refreshSelection(false);
                             }
                             catch (Exception error)
                             {
@@ -1701,6 +1702,7 @@ namespace SapQuadTransitionPlugin
                         Console.WriteLine("mesh-stage=undo-retry visible=" + dialog.Visible);
                         if (dialog.Visible) try
                         {
+                            sessionLock.RelockAfterRestore();
                             // Finish releasing the previous model *and* read
                             // the new file's selection/units before Generate
                             // can become clickable again.
@@ -7817,7 +7819,6 @@ namespace SapQuadTransitionPlugin
                         options.MinMeters = options.GmshPreview.MinMeters;
                     }
                     options.Language = useItalian ? "it" : "en";
-                    options.FastMode = fastMode.Checked;
                     options.CreateBackup = createBackup.Checked;
                     // Persist the generation tab, but never its additional-tab
                     // regular-grid switch (which belongs to this session only).
@@ -7830,7 +7831,7 @@ namespace SapQuadTransitionPlugin
                     string temporary = OptionsFile + ".tmp";
                     File.WriteAllText(temporary, new JavaScriptSerializer().Serialize(new {
                         options.SizeMeters, options.MinMeters, options.Language,
-                        options.FastMode, options.CreateBackup, options.GmshPreview }), Encoding.UTF8);
+                        options.CreateBackup, options.GmshPreview }), Encoding.UTF8);
                     if (File.Exists(OptionsFile)) File.Replace(temporary, OptionsFile, null);
                     else File.Move(temporary, OptionsFile);
                 }
@@ -7842,7 +7843,6 @@ namespace SapQuadTransitionPlugin
             {
                 SavedOptions saved = ReadSavedOptions();
                 if (saved == null) return;
-                if (saved.FastMode.HasValue) fastMode.Checked = saved.FastMode.Value;
                 if (saved.CreateBackup.HasValue) createBackup.Checked = saved.CreateBackup.Value;
                 if (gmshPreviewOptions != null)
                 {
@@ -8058,7 +8058,8 @@ namespace SapQuadTransitionPlugin
                 }
             }
             private bool skipGenerateBackupWarning;
-            private bool skipApplyConfirmation;
+            private bool skipNextGenerationWarning;
+            private bool committingGeneration;
             private bool confirmationOnlyApply;
             public void SetConfirmationOnlyApply(bool enabled) { confirmationOnlyApply = enabled; }
             private Func<string> applyBackupInfo;
@@ -8122,6 +8123,7 @@ namespace SapQuadTransitionPlugin
             private string availableReleaseUrl;
             private string availableDownloadUrl;
             private MeshQualityReport qualityReport;
+            private string generationCompletionStatus;
             private Action undoAction;
             private Action applyAction;
             private Action appliedUndoAction;
@@ -8129,6 +8131,7 @@ namespace SapQuadTransitionPlugin
             private Func<bool> completedModelGuard;
             private Func<bool> generationFilterCheck;
             private Action onApplied;
+            private Action releaseCompletedUndo;
             private Action<string> releasePreviewModelLock;
             public double MaxSize { get; private set; }
             public int EdgeTolerancePercent { get { return strictMaximumSize.Checked ? 0 : (int)edgeTolerance.Value; } }
@@ -8207,6 +8210,28 @@ namespace SapQuadTransitionPlugin
                 completedModelGuard = currentModel;
             }
             public void SetOnApplied(Action callback) { onApplied = callback; }
+            public void SetReleaseCompletedUndo(Action callback) { releaseCompletedUndo = callback; }
+            public void ReleaseCompletedUndo()
+            {
+                Action release = releaseCompletedUndo;
+                if (release == null) return;
+                release();
+                releaseCompletedUndo = null;
+            }
+            public void CommitForGeneration()
+            {
+                if (qualityReport == null || Applied) return;
+                committingGeneration = true;
+                try { generate.PerformClick(); }
+                finally { committingGeneration = false; }
+                if (!Applied && UndoFailure == null)
+                    throw new InvalidOperationException("Generate did not commit the mesh.");
+                if (Applied && generationCompletionStatus != null)
+                {
+                    status.Text = generationCompletionStatus;
+                    measurementToolTip.SetToolTip(status, "");
+                }
+            }
             public void SetReleasePreviewModelLock(Action<string> callback)
             { releasePreviewModelLock = callback; }
             private bool ReleasePreviewModelLock(string operation)
@@ -8267,8 +8292,8 @@ namespace SapQuadTransitionPlugin
                     });
                     var enableBackup = new CheckBox {
                         Left = 18, Top = 107, Width = 474, Height = 27,
-                        Text = L("Enable backup in Transfer options for this generation (recommended)",
-                            "Attiva il backup in Opzioni di trasferimento per questa generazione (consigliato)")
+                        Text = L("Enable backup in Backup options for this generation (recommended)",
+                            "Attiva il backup in Opzioni di backup per questa generazione (consigliato)")
                     };
                     choice.Controls.Add(enableBackup);
                     var suppress = new CheckBox {
@@ -8297,6 +8322,42 @@ namespace SapQuadTransitionPlugin
                 }
                 RememberOptions();
                 return true;
+            }
+            private bool ConfirmNextGeneration()
+            {
+                if (qualityReport == null || skipNextGenerationWarning ||
+                    !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE"))) return true;
+                using (var choice = new Form())
+                {
+                    choice.Text = L("Generate another mesh?", "Generare un'altra mesh?");
+                    choice.ClientSize = new Size(510, 198);
+                    choice.Font = Font; choice.BackColor = Color.White;
+                    choice.FormBorderStyle = FormBorderStyle.FixedDialog;
+                    choice.StartPosition = FormStartPosition.CenterParent;
+                    choice.MaximizeBox = choice.MinimizeBox = choice.ShowInTaskbar = false;
+                    ApplyPluginIcon(choice);
+                    choice.Controls.Add(new Label { Left = 18, Top = 15, Width = 474, Height = 95,
+                        Text = L("Generate will save the current model before creating the next mesh. " +
+                            "Undo will then restore only the model saved before this next generation; " +
+                            "the previous generation can no longer be undone.",
+                            "Genera salverà il modello corrente prima di creare la prossima mesh. " +
+                            "Annulla ripristinerà soltanto il modello salvato prima di questa nuova generazione; " +
+                            "la generazione precedente non potrà più essere annullata.") });
+                    var suppress = new CheckBox { Left = 18, Top = 116, Width = 474, Height = 25,
+                        Text = L("Do not show this warning again in this session",
+                            "Non mostrare più questo avviso in questa sessione") };
+                    choice.Controls.Add(suppress);
+                    var cancel = new Button { Left = 230, Top = 153, Width = 120, Height = 30,
+                        Text = L("Cancel", "Annulla"), DialogResult = DialogResult.Cancel };
+                    var proceed = new Button { Left = 362, Top = 153, Width = 130, Height = 30,
+                        Text = "OK", DialogResult = DialogResult.OK };
+                    StyleButton(cancel, false); StyleButton(proceed, true);
+                    choice.Controls.Add(cancel); choice.Controls.Add(proceed);
+                    choice.AcceptButton = cancel; choice.CancelButton = cancel;
+                    if (ShowHostDialog(choice) != DialogResult.OK) return false;
+                    if (suppress.Checked) skipNextGenerationWarning = true;
+                    return true;
+                }
             }
             private bool ConfirmApply()
             {
@@ -8328,8 +8389,7 @@ namespace SapQuadTransitionPlugin
                         MessageBoxDefaultButton.Button2) == DialogResult.Yes;
                 }
                 // Atomic fixtures choose Apply/Undo explicitly in the runner.
-                if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE")) ||
-                    skipApplyConfirmation) return true;
+                if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE"))) return true;
                 using (var choice = new Form())
                 {
                     choice.Text = confirmationOnlyApply ? L("Confirm generated mesh?", "Confermare la mesh generata?") :
@@ -8387,7 +8447,6 @@ namespace SapQuadTransitionPlugin
                     choice.AcceptButton = no;
                     choice.CancelButton = no;
                     if (ShowHostDialog(choice) != DialogResult.Yes) return false;
-                    if (suppress.Checked) skipApplyConfirmation = true;
                 }
                 RememberOptions();
                 return true;
@@ -8400,6 +8459,7 @@ namespace SapQuadTransitionPlugin
             public void DiscardCompletedForModelChange()
             {
                 if (working || qualityReport == null) return;
+                ReleaseCompletedUndo();
                 ClearCompletedPreview();
                 status.Text = L("SAP2000 model changed. The previous preview/Undo is no longer available; select an area in the current model.",
                     "Modello SAP2000 cambiato. Anteprima e Annulla precedenti non sono più disponibili: selezionare un'area nel modello corrente.");
@@ -8493,10 +8553,16 @@ namespace SapQuadTransitionPlugin
                 SetSelectionCounts(areas, quads, triangles, polygons, frames, links, joints);
                 UpdateOptionState();
                 if (RetryRequested) generate.Enabled = false;
-                status.Text = requiresSavedModel ? SaveModelFirstText() :
-                    hasSelectedAreas ? L("Ready. Selection updated.", "Pronto. Selezione aggiornata.") :
-                    L("Select at least one area in " + HostProductName() + "; this window updates automatically.",
-                      "Selezionare almeno un'area in " + HostProductName() + ": questa finestra si aggiorna automaticamente.");
+                if (Applied && !hasSelectedAreas && !requiresSavedModel && generationCompletionStatus != null)
+                    status.Text = generationCompletionStatus;
+                else
+                {
+                    if (hasSelectedAreas) generationCompletionStatus = null;
+                    status.Text = requiresSavedModel ? SaveModelFirstText() :
+                        hasSelectedAreas ? L("Ready. Selection updated.", "Pronto. Selezione aggiornata.") :
+                        L("Select at least one area in " + HostProductName() + "; this window updates automatically.",
+                          "Selezionare almeno un'area in " + HostProductName() + ": questa finestra si aggiorna automaticamente.");
+                }
             }
             private static void UpdateGroups(ComboBox box, string[] names)
             {
@@ -8804,8 +8870,9 @@ namespace SapQuadTransitionPlugin
                     UpdateOptionState();
                 };
                 profiles.SelectedIndexChanged += delegate { ApplyProfileDefaults(profiles.SelectedIndex); };
-                fastMode.Left = 20; fastMode.Top = 490; fastMode.Width = 530; fastMode.FlatStyle = FlatStyle.Standard;
-                fastMode.Text = "FAST - bulk insertion through SAP2000/CSiBridge tables"; fastMode.Checked = true; Controls.Add(fastMode);
+                // FAST is the interactive default; atomic fixtures may still
+                // exercise the Standard fallback without exposing a UI switch.
+                fastMode.Checked = true;
                 useMaximumCores.FlatStyle = FlatStyle.Flat; useMaximumCores.Checked = true;
                 useMaximumCores.CheckedChanged += delegate { workerLimit.Enabled = !working && this.hasSelectedAreas && !useMaximumCores.Checked; };
                 workerLimit.Minimum = 1; workerLimit.Maximum = Math.Max(1, Environment.ProcessorCount);
@@ -8824,7 +8891,7 @@ namespace SapQuadTransitionPlugin
                     // Do not begin a second transaction while the previous
                     // snapshot/preview frame is still being released.
                     if (RetryRequested || requiresSavedModel) return;
-                    if (qualityReport != null)
+                    if (qualityReport != null && !Applied)
                     {
                         if (!CurrentModelMatchesPreview())
                         {
@@ -8834,7 +8901,7 @@ namespace SapQuadTransitionPlugin
                         if (Applied) return;
                         LockViewportForCommit();
                         bool confirmed = false;
-                        try { confirmed = ConfirmApply(); }
+                        try { confirmed = committingGeneration || ConfirmApply(); }
                         finally { if (!confirmed) UnlockViewportAfterCommit(); }
                         if (!confirmed) return;
                         if (DetectRegionalChange()) { AbandonForRegionalChange(); return; }
@@ -8899,7 +8966,7 @@ namespace SapQuadTransitionPlugin
                         try
                         {
                             Applied = true;
-                            undoAction = null;
+                            if (!committingGeneration) undoAction = null;
                             applyAction = appliedUndoAction = null;
                             try { if (onApplied != null) onApplied(); }
                             catch (Exception) when (DetectRegionalChange())
@@ -8910,10 +8977,10 @@ namespace SapQuadTransitionPlugin
                             snapshotPath = null;
                             generate.Enabled = false;
                             generate.Text = L("Generate", "Genera");
-                            undo.Enabled = false;
+                            undo.Enabled = committingGeneration;
                             details.Enabled = true;
-                            status.Text = L("Mesh applied. This operation is complete; select another area to generate a new mesh.",
-                                "Mesh applicata. Operazione conclusa: selezionare un'altra area per generare una nuova mesh.");
+                            status.Text = L("Mesh generated. Select an area for another generation or use Undo for this mesh.",
+                                "Mesh generata. Selezionare un'area per una nuova generazione oppure usare Annulla per questa mesh.");
                             if (preservationWarning != null)
                                 status.Text += L(" Design overrides require manual review.",
                                     " Le sovrascritture di progetto richiedono verifica manuale.");
@@ -8968,7 +9035,7 @@ namespace SapQuadTransitionPlugin
                         HoleDiameter = diameter;
                         holeDiameter.Text = diameter.ToString("G9", CultureInfo.InvariantCulture);
                     }
-                    if (!ConfirmGenerateWithoutBackup()) return;
+                    if (!ConfirmNextGeneration() || !ConfirmGenerateWithoutBackup()) return;
                     try { BeginRegionalTransaction(); }
                     catch (InvalidOperationException error)
                     {
@@ -8976,8 +9043,17 @@ namespace SapQuadTransitionPlugin
                         return;
                     }
                     if (DetectRegionalChange()) { AbandonForRegionalChange(); return; }
+                    bool replacingCompleted = qualityReport != null;
+                    if (replacingCompleted)
+                    {
+                        ReleaseCompletedUndo();
+                        ClearCompletedPreview();
+                    }
                     RememberOptions();
-                    RetryRequested = false;
+                    // Keep the rearm request until the completed generation's
+                    // preview loop releases its resources. Otherwise StartRequested
+                    // cannot be consumed by the outer generation loop.
+                    if (!replacingCompleted) RetryRequested = false;
                     operationClock.Restart();
                     StartRequested = true;
                 };
@@ -9061,7 +9137,21 @@ namespace SapQuadTransitionPlugin
                         return;
                     }
                     if (working || closingPreview) { e.Cancel = true; return; }
-                    if (qualityReport == null || Applied || undoAction == null || UndoFailure != null) return;
+                    if (qualityReport == null || undoAction == null || UndoFailure != null) return;
+                    if (Applied)
+                    {
+                        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE"))) return;
+                        e.Cancel = ShowHostMessage(L(
+                            "Closing MESHing makes Undo unavailable. The meshed model has not been saved: " +
+                            "the SDB/BDB on disk contains the state before the latest Generate. " +
+                            "If you close the model without saving, that earlier state will be restored. Exit MESHing?",
+                            "Chiudendo MESHing non sarà più possibile usare Annulla. Il modello con la mesh " +
+                            "non è stato salvato: l'SDB/BDB su disco contiene lo stato precedente all'ultimo Genera. " +
+                            "Se si chiude il modello senza salvare, verrà ripristinato quello stato. Uscire da MESHing?"),
+                            WindowTitle, MessageBoxButtons.OKCancel, MessageBoxIcon.Warning,
+                            MessageBoxDefaultButton.Button2) != DialogResult.OK;
+                        return;
+                    }
                     e.Cancel = true;
                     closingPreview = true;
                     try
@@ -9076,7 +9166,7 @@ namespace SapQuadTransitionPlugin
                     }
                     finally { closingPreview = false; }
                 };
-                FormClosed += delegate { RememberOptions(); };
+                FormClosed += delegate { ReleaseCompletedUndo(); RememberOptions(); };
                 Controls.Add(generate); Controls.Add(details); Controls.Add(undo);
                 AddDialogFooter(this, 704, ClientSize.Width);
                 // Keep the update link centered between the GPL link and version label.
@@ -9179,14 +9269,11 @@ namespace SapQuadTransitionPlugin
                 gmshAdvancedTab.Controls.Add(gmshEffectivePreview);
                 gmshAdvancedTab.Controls.Add(gmshAdvancedHint);
                 gmshAdvancedHint.SetBounds(12, 325, 494, 48);
-                gmshSapTab.Controls.Add(fastMode); fastMode.SetBounds(12, 32, 494, 48);
-                fastMode.CheckAlign = ContentAlignment.TopLeft;
-                fastMode.TextAlign = ContentAlignment.TopLeft;
-                gmshSapTab.Controls.Add(createBackup); createBackup.SetBounds(12, 83, 16, 28);
+                gmshSapTab.Controls.Add(createBackup); createBackup.SetBounds(12, 24, 16, 28);
                 createBackup.CheckAlign = ContentAlignment.MiddleLeft;
                 createBackup.Text = "";
                 gmshSapTab.Controls.Add(createBackupDescription);
-                createBackupDescription.SetBounds(28, 88, 478, 110);
+                createBackupDescription.SetBounds(28, 29, 478, 110);
                 createBackupDescription.TextAlign = ContentAlignment.TopLeft;
                 createBackupDescription.Cursor = Cursors.Hand;
                 createBackupDescription.Click += delegate { if (createBackup.Enabled) createBackup.Checked = !createBackup.Checked; };
@@ -9272,7 +9359,7 @@ namespace SapQuadTransitionPlugin
                     "Mantiene gli intervalli fra nodi SAP2000 esplicitamente selezionati sui bordi delle aree. Gli altri bordi possono essere suddivisi; un tratto protetto può superare la dimensione nominale."));
                 gmshHolesTab.Text = L("Additional options", "Opzioni aggiuntive");
                 gmshAdvancedTab.Text = L("Gmsh JSON", "JSON Gmsh");
-                gmshSapTab.Text = L("Transfer options", "Opzioni di trasferimento");
+                gmshSapTab.Text = L("Backup options", "Opzioni di backup");
                 generateCircularHoles.Text = L("Create circular holes around this group of joints",
                     "Crea fori circolari ai nodi SAP2000 del gruppo");
                 holeGroupLabel.Text = L("Group", "Gruppo");
@@ -9678,8 +9765,6 @@ namespace SapQuadTransitionPlugin
                 measurementToolTip.SetToolTip(holeDiameter, tip);
                 string host = HostProductName();
                 string extension = host == "CSiBridge" ? "BDB" : host == "ETABS" ? "EDB" : "SDB";
-                fastMode.Text = L("Use interactive database to generate elements in " + host + " (fast mode)",
-                    "Usa il database interattivo per generare elementi in " + host + " (modalità veloce)");
                 createBackupDescription.Text = L("Before every Generate, selecting this option requests a copy of the " +
                     extension + " model file on disk. This file contains the model state at the user's last save. " +
                     "Therefore this backup does not include any changes made to the model since that save.",
@@ -9691,12 +9776,12 @@ namespace SapQuadTransitionPlugin
                 measurementToolTip.SetToolTip(createBackupDescription, measurementToolTip.GetToolTip(createBackup));
                 ApplySelectionSummary();
                 UpdateCreatedElements();
-                generate.Text = qualityReport != null && !Applied ? L("Apply", "Applica") : L("Generate", "Genera");
+                generate.Text = L("Generate", "Genera");
                 undo.Text = L("Undo mesh", "Annulla mesh");
                 details.Text = L("Mesh quality", "Qualita della mesh");
                 if (!working && qualityReport == null && !RetryRequested)
                     status.Text = requiresSavedModel ? SaveModelFirstText() : L("Ready.", "Pronto.");
-                if (!hasSelectedAreas && !requiresSavedModel) status.Text = L("Select at least one area in " + HostProductName() + "; this window updates automatically.",
+                if (!hasSelectedAreas && !requiresSavedModel && qualityReport == null) status.Text = L("Select at least one area in " + HostProductName() + "; this window updates automatically.",
                     "Selezionare almeno un'area in " + HostProductName() + ": questa finestra si aggiorna automaticamente.");
                 UpdateNoticeText();
                 foreach (Control control in Controls)
@@ -9725,13 +9810,12 @@ namespace SapQuadTransitionPlugin
                     holeGroup.Enabled = generateCircularHoles.Checked && holeGroup.Items.Count > 0;
                     holeDiameter.Enabled = generateCircularHoles.Checked;
                     preferRegular.Enabled = stressRefinement.Enabled = structuredSectorBands.Enabled = false;
-                    fastMode.Enabled = useMaximumCores.Enabled = workerLimit.Enabled = generate.Enabled = false;
+                    useMaximumCores.Enabled = workerLimit.Enabled = generate.Enabled = false;
                     createBackup.Enabled = !requiresSavedModel;
                     createBackupDescription.Enabled = !requiresSavedModel;
-                    fastMode.Enabled = true;
                     return;
                 }
-                if (qualityReport == null) generate.Enabled = !requiresSavedModel;
+                generate.Enabled = !requiresSavedModel && (qualityReport == null || Applied);
                 symmetric.Enabled = hasSymmetryAxes;
                 strictMaximumSize.Enabled = edgeTolerance.Enabled = false;
                 symmetryAxis.Enabled = symmetric.Checked && hasSymmetryAxes;
@@ -9747,7 +9831,6 @@ namespace SapQuadTransitionPlugin
                 holeGroup.Enabled = generateCircularHoles.Checked && holeGroup.Items.Count > 0;
                 holeDiameter.Enabled = generateCircularHoles.Checked;
                 structuredSectorBands.Enabled = hasFrames;
-                fastMode.Enabled = true;
                 useMaximumCores.Enabled = true;
                 workerLimit.Enabled = !useMaximumCores.Checked;
                 createBackup.Enabled = true;
@@ -9755,6 +9838,7 @@ namespace SapQuadTransitionPlugin
             }
             public void BeginWork(string text)
             {
+                generationCompletionStatus = null;
                 insertionNotice = null;
                 preservationWarning = null;
                 designTransferLossWarning = false;
@@ -10013,11 +10097,12 @@ namespace SapQuadTransitionPlugin
                         " links=" + afterMeshing.Links + " joints=" + afterMeshing.Joints +
                         Environment.NewLine + "quality_metrics=" + string.Join("; ", report.Metrics.Select(metric =>
                             metric.Name + "=" + metric.Value)) + Environment.NewLine); } catch { }
+                generationCompletionStatus = status.Text;
                 details.Enabled = true;
                 undo.Enabled = true;
                 undo.Text = L("Undo mesh", "Annulla mesh");
                 generate.Enabled = true;
-                generate.Text = L("Apply", "Applica");
+                generate.Text = L("Generate", "Genera");
                 language.Enabled = true;
                 AcceptButton = details;
                 ShowTransferWarnings();

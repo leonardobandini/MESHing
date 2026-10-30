@@ -36,7 +36,7 @@ try {
         $sourceLink = @($dialog.Controls | Where-Object {
             $_ -is [Windows.Forms.LinkLabel] -and $_.Tag -eq 'license-link'
         })
-        Assert ($dialog.Text -eq 'MESHing 3.0.5' -and $headerTitle.Text -eq 'MESHing' -and
+        Assert ($dialog.Text -eq 'MESHing 3.0.6' -and $headerTitle.Text -eq 'MESHing' -and
             $headerTitle.Left -eq 22 -and $headerTitle.Top -eq 13 -and
             $dialog.ClientSize.Width -eq 570 -and $dialog.ClientSize.Height -eq 762 -and
             $companyLogo.Count -eq 1 -and $companyLogo[0].Width -eq 46 -and
@@ -62,7 +62,7 @@ try {
             $type.GetField('gmshStructureTab', $flags) -eq $null -and
             $tabs.Visible -and $tabs.TabPages.Count -eq 3 -and
             (@($tabs.TabPages | ForEach-Object Text) -join ',') -eq
-            'Gmsh,Additional options,Transfer options' -and
+            'Gmsh,Additional options,Backup options' -and
             -not $tabs.TabPages.Contains((Field $dialog 'gmshAdvancedTab'))) `
             'The shipped interface must have three tabs and no debug JSON tab.'
         foreach ($name in @('profiles','size','edgeTolerance','strictMaximumSize',
@@ -128,20 +128,16 @@ try {
         $tabs.SelectedTab = (Field $dialog 'gmshSapTab')
         $backupBox = Field $dialog 'createBackup'
         $backupLabel = Field $dialog 'createBackupDescription'
-        Assert ((Field $dialog 'fastMode').Text -eq 'Use interactive database to generate elements in SAP2000/CSiBridge (fast mode)' -and
-            $backupLabel.Text -eq ('Before every Generate, copy the previously saved SDB/BDB to a numbered backup, ' +
-                'then save the current model to its SDB/BDB and capture the Undo snapshot. ' +
-                'The backup does not include edits that were still unsaved before Generate.') -and
+        Assert ((Field $dialog 'fastMode').Parent -eq $null -and
+            $tabs.SelectedTab.Text -eq 'Backup options' -and
+            $backupLabel.Text -match 'Before every Generate' -and
             $backupBox.Text -eq '' -and $backupBox.AccessibleName -eq $backupLabel.Text -and
-            (Field $dialog 'fastMode').Height -ge 44 -and
-            (Field $dialog 'fastMode').Bottom -le $backupBox.Top -and
-            (Field $dialog 'fastMode').CheckAlign -eq [Drawing.ContentAlignment]::TopLeft -and
-            (Field $dialog 'fastMode').TextAlign -eq $backupLabel.TextAlign -and
+            $backupBox.Top -le 32 -and
             $backupLabel.Top -eq $backupBox.Top + 5 -and
             $backupLabel.Left -ge $backupBox.Right -and
             $backupLabel.Bottom -lt $tabs.SelectedTab.Height -and
             $backupLabel.TextAlign -eq [Drawing.ContentAlignment]::TopLeft) `
-            'Transfer options wording differs from the supplied layout.'
+            'Backup options wording or sole-control layout differs.'
         $backupBox.Checked = $false
         $backupLabel.GetType().GetMethod('OnClick',[Reflection.BindingFlags]'Instance,NonPublic').Invoke(
             $backupLabel,[object[]]@([EventArgs]::Empty)) | Out-Null
@@ -363,7 +359,7 @@ try {
                 [Windows.Forms.TextFormatFlags]::WordBreak).Height -le $subtitle.Height + 5) `
             'MESHing subtitle changed after switching to Italian.'
         Assert ((@($tabs.TabPages | ForEach-Object Text) -join ',') -eq
-            'Gmsh,Opzioni aggiuntive,Opzioni di trasferimento' -and
+            'Gmsh,Opzioni aggiuntive,Opzioni di backup' -and
             $reset.Text -eq 'Ripristina default') 'Italian controls changed.'
         $tabs.SelectedTab = $page
         Assert ($regular.Text -match 'regolari allineate' -and
@@ -389,20 +385,13 @@ try {
             $viewport.Contains($openingGroup.RectangleToScreen($openingGroup.ClientRectangle))) `
             'Italian additional options require scrolling or clip a control.'
         $tabs.SelectedTab = (Field $dialog 'gmshSapTab')
-        $italianFast = Field $dialog 'fastMode'
-        $fastTextHeight = [Windows.Forms.TextRenderer]::MeasureText($italianFast.Text, $italianFast.Font,
-            [Drawing.Size]::new($italianFast.Width - 28, 500),
-            [Windows.Forms.TextFormatFlags]::WordBreak).Height
-        Assert ($italianFast.Height -ge $fastTextHeight -and
-            $italianFast.TextAlign -eq [Drawing.ContentAlignment]::TopLeft -and
-            $italianFast.CheckAlign -eq [Drawing.ContentAlignment]::TopLeft) `
-            'Italian FAST text must fit below its top-aligned checkbox.'
+        Assert ((Field $dialog 'fastMode').Parent -eq $null) 'The FAST choice is still visible in Italian.'
         $backupLabel = Field $dialog 'createBackupDescription'
         $backupHeight = [Windows.Forms.TextRenderer]::MeasureText($backupLabel.Text, $backupLabel.Font,
             [Drawing.Size]::new($backupLabel.Width - 4, 500),
             [Windows.Forms.TextFormatFlags]::WordBreak).Height
-        Assert ($backupLabel.Text -match '^Prima di ogni Genera, copia l.SDB/BDB' -and
-            $backupLabel.Text -match 'Il backup non include le modifiche' -and
+        Assert ($backupLabel.Text -match '^Prima di ogni Genera' -and
+            $backupLabel.Text -match 'Questo backup quindi non include le modifiche' -and
             $backupLabel.Height -ge $backupHeight -and
             $backupLabel.Bottom -lt $tabs.SelectedTab.Height) `
             "The Italian backup explanation is invalid or clipped: text=$($backupLabel.Text) required=$backupHeight actual=$($backupLabel.Height) bottom=$($backupLabel.Bottom) tabHeight=$($tabs.SelectedTab.Height)."
@@ -502,9 +491,9 @@ try {
         $emptyBackupLabel = Field $empty 'createBackupDescription'
         Assert (-not $generate.Enabled -and (Field $empty 'status').Text -match 'aggiorna automaticamente|updates automatically') `
             "Opening without a selection must wait for SAP objects: enabled=$($generate.Enabled) status=$((Field $empty 'status').Text)"
-        Assert (-not $emptyFast.Enabled -and -not $emptyBackup.Enabled -and
-            -not $emptyBackupLabel.Enabled -and $emptyFast.Checked -and $emptyBackup.Checked) `
-            'No selection must disable, not clear, the FAST and backup choices.'
+        Assert ($emptyFast.Parent -eq $null -and $emptyBackup.Enabled -and
+            $emptyBackupLabel.Enabled -and $emptyFast.Checked -and $emptyBackup.Checked) `
+            'Backup should remain configurable without a selection; FAST stays internal.'
         $emptyHoles = Field $empty 'generateCircularHoles'
         $emptyOpenings = Field $empty 'generateHoles'
         Assert ($emptyHoles.Enabled -and $emptyOpenings.Enabled -and
@@ -517,13 +506,13 @@ try {
         $emptyHoles.Checked = $false
         $empty.UpdateLiveSelection(1, 1, 0, 0, 0, 0, 0, $false,
             [string[]]@(), [string[]]@(), [Array]::CreateInstance($axis, 0))
-        Assert ($generate.Enabled -and $emptyFast.Enabled -and $emptyBackup.Enabled -and
+        Assert ($generate.Enabled -and $emptyBackup.Enabled -and
             $emptyBackupLabel.Enabled -and $emptyFast.Checked -and $emptyBackup.Checked -and
             (Field $empty 'areaSelection').Text -match 'Areas: 1|Aree: 1') `
             'Selecting an area after opening did not enable Generate.'
         $empty.UpdateLiveSelection(0, 0, 0, 0, 0, 0, 0, $false,
             [string[]]@(), [string[]]@(), [Array]::CreateInstance($axis, 0))
-        Assert (-not $generate.Enabled -and -not $emptyFast.Enabled -and -not $emptyBackup.Enabled -and
+        Assert (-not $generate.Enabled -and $emptyBackup.Enabled -and
             $emptyFast.Checked -and $emptyBackup.Checked -and
             (Field $empty 'areaSelection').Text -match 'Areas: 0|Aree: 0') `
             'Clearing the SAP selection did not disable Generate.'
@@ -546,23 +535,24 @@ try {
         $rearmed.BeginWork('Preparing geometry...')
         $rearmed.Complete($report, 5, $inventory, $null, $null, [Action]{},
             [Action]{}, [Action]{}, 'prior-model-snapshot.csv')
+        $completedStatus = (Field $rearmed 'status').Text
+        Assert ($completedStatus -match 'Mesh completed|Mesh completata' -and
+            $completedStatus -match 'Elapsed|Tempo impiegato' -and
+            $completedStatus -match '5') 'Completion must show the mesh count and elapsed time.'
         Assert (-not $rearmed.CanRefreshSelection) 'An uncommitted preview must keep its captured selection.'
-        $rearmed.ApplyForAutomation()
+        $script:oldUndoReleased = 0
+        $rearmed.SetReleaseCompletedUndo([Action]{ $script:oldUndoReleased++ })
+        $rearmed.CommitForGeneration()
         Assert ($rearmed.Applied -and $rearmed.CanRefreshSelection -and
-            -not (Field $rearmed 'undo').Enabled -and
-            (Field $rearmed 'snapshotPath') -eq $null) `
-            'Applying the mesh did not complete the transaction or release its Undo snapshot.'
-        $rearmed.RearmAppliedForNewSelection()
-        Assert (-not $rearmed.Applied -and $rearmed.RetryRequested -and
-            (Field $rearmed 'qualityReport') -eq $null -and
-            -not (Field $rearmed 'undo').Enabled -and
-            -not (Field $rearmed 'generate').Enabled) 'Previous-model Undo remained active before snapshot cleanup.'
-        $rearmed.FinishRearm()
-        Assert (-not $rearmed.RetryRequested -and (Field $rearmed 'generate').Enabled) `
-            'Generation did not re-enable after releasing the previous snapshot.'
+            (Field $rearmed 'undo').Enabled -and $script:oldUndoReleased -eq 0 -and
+            (Field $rearmed 'generate').Text -eq 'Generate' -and
+            (Field $rearmed 'status').Text -eq $completedStatus) `
+            'Generate must commit the mesh, retain Undo and keep the completion summary.'
         $rearmed.UpdateLiveSelection(0, 0, 0, 0, 0, 0, 0, $false,
             [string[]]@(), [string[]]@(), [Array]::CreateInstance($axis, 0))
-        Assert (-not (Field $rearmed 'generate').Enabled) 'Generate stayed enabled without selected areas.'
+        Assert (-not (Field $rearmed 'generate').Enabled -and
+            (Field $rearmed 'status').Text -eq $completedStatus) `
+            'Automatic deselection after Generate erased the count and elapsed time.'
         $rearmed.ChangeLengthUnit('m')
         $newPanel = Field $rearmed 'gmshPreviewOptions'
         $maxText = $newPanel.GetType().GetField('maxSize', $flags).GetValue($newPanel).Text
@@ -570,8 +560,14 @@ try {
             'Changing SAP model units did not convert visible length values.'
         $rearmed.UpdateLiveSelection(1, 1, 0, 0, 0, 0, 0, $false,
             [string[]]@(), [string[]]@(), [Array]::CreateInstance($axis, 0))
-        Assert ((Field $rearmed 'generate').Enabled) 'New SAP selection did not enable Generate.'
-        Write-Host 'AFTER_APPLY_REFRESH=PASS OLD_UNDO_DISABLED=PASS MODEL_UNITS_CONVERTED=PASS'
+        Assert ((Field $rearmed 'generate').Enabled -and (Field $rearmed 'undo').Enabled -and
+            (Field $rearmed 'status').Text -ne $completedStatus) `
+            'New SAP selection must allow Generate while the previous Undo remains available.'
+        (Field $rearmed 'generate').PerformClick()
+        Assert ($rearmed.StartRequested -and $script:oldUndoReleased -eq 1 -and
+            -not (Field $rearmed 'undo').Enabled -and (Field $rearmed 'qualityReport') -eq $null) `
+            'A new Generate must replace the previous Undo only after confirmation.'
+        Write-Host 'GENERATE_COMMITS=PASS UNDO_RETAINED=PASS NEXT_GENERATE_RELEASES_OLD_UNDO=PASS'
     } finally { $rearmed.Close(); $rearmed.Dispose() }
     $env:SAP_QUAD_ATOMIC_SIZE = $null
     [IO.File]::WriteAllText($env:SAP_GMSH_V2_SETTINGS_PATH,
@@ -592,14 +588,16 @@ try {
             -not (Field $migrated 'gmshPreserveSelectedEdges').Checked -and
             $restoredSettings.preserveSelectedEdges -eq $false -and
             (Field $migrated 'fastMode').Checked -and (Field $migrated 'createBackup').Checked -and
-            $restoredSettings.algorithm -eq 8 -and $restoredSettings.recombine -and $restoredSettings.optimize) `
-            'A new window must restore only mesh sizes and reset every other option.'
+            $restoredSettings.algorithm -eq 1 -and -not $restoredSettings.recombine -and
+            -not $restoredSettings.optimize) `
+            "Legacy settings: fast=$((Field $migrated 'fastMode').Checked) backup=$((Field $migrated 'createBackup').Checked) max=$($v2.GetType().GetField('maxSize',$flags).GetValue($v2).Text) min=$($v2.GetType().GetField('minSize',$flags).GetValue($v2).Text) settings=$($restoredSettings | ConvertTo-Json -Compress)"
         $migrated.Close()
         $savedSizes = Get-Content -LiteralPath $env:SAP_GMSH_V2_SETTINGS_PATH -Raw | ConvertFrom-Json
         Assert ($savedSizes.SizeMeters -eq 0.04 -and $savedSizes.MinMeters -eq 0.005 -and
-            $savedSizes.Language -eq 'en' -and @($savedSizes.PSObject.Properties).Count -eq 3) `
-            "The settings file must contain only two sizes and language: $($savedSizes | ConvertTo-Json -Compress)"
-        Write-Host 'LEGACY_SIZES_RESTORED=PASS OPTIONS_RESET=PASS ONLY_SIZES_AND_LANGUAGE_SAVED=PASS'
+            $savedSizes.Language -eq 'en' -and $savedSizes.CreateBackup -eq $true -and
+            -not $savedSizes.PSObject.Properties['FastMode']) `
+            "FAST must not be saved as a selectable preference: $($savedSizes | ConvertTo-Json -Compress)"
+        Write-Host 'LEGACY_SIZES_RESTORED=PASS FAST_ALWAYS_ON=PASS BACKUP_PERSISTED=PASS'
     } finally { $migrated.Close(); $migrated.Dispose() }
     $edited = $ctor.Invoke([object[]]@('mm', $true, [string[]]@('BOLT'),
         [string[]]@('ALL'), [Array]::CreateInstance($axis, 0), $true))

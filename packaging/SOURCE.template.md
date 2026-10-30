@@ -5,11 +5,11 @@ checksums are assets of the **same** MESHing release:
 
 https://github.com/leonardobandini/MESHing/releases/tag/v{VERSION}
 
-`MESHing-latest.zip` is a moving link to the release designated Latest, which
-may be a different release from this versioned ZIP. Its moving `.sha256` link
-verifies the currently downloaded alias; use the versioned ZIP and versioned
-checksum below to obtain the fixed binary corresponding to these sources.
-The moving alias is not an asset of this non-Latest release.
+At publication, `MESHing-latest.zip` is an asset of this release and is
+byte-for-byte identical to `MESHing-{VERSION}.zip`. The `/releases/latest/`
+link is moving: once a later release becomes Latest, it may point to a
+different ZIP. Its `.sha256` link verifies the currently downloaded alias;
+use the versioned ZIP and checksum below for a fixed binary.
 
 | Asset | Download |
 | --- | --- |

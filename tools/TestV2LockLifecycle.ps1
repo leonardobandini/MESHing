@@ -31,7 +31,8 @@ $acknowledge = $lockType.GetMethod('AcknowledgeExternalRelock', $flags)
 $unexpected = $lockType.GetProperty('ExternalUnlockObserved', $flags)
 $unlock = $lockType.GetMethod('UnlockForWork', $flags)
 $relock = $lockType.GetMethod('RelockAfterWork', $flags)
-if (-not $constructor -or -not $ready -or -not $acknowledge -or -not $unexpected) {
+$afterRestore = $lockType.GetMethod('RelockAfterRestore', $flags)
+if (-not $constructor -or -not $ready -or -not $acknowledge -or -not $unexpected -or -not $afterRestore) {
     throw 'Missing model-lock guard methods in the candidate DLL.'
 }
 $sap = $null; $ownedPid = 0; $guard = $null
@@ -55,6 +56,18 @@ try {
     }
     $guard = $constructor.Invoke([object[]]@($model.PSObject.BaseObject, $true))
     [void]$ready.Invoke($guard, [object[]]@())
+    [void]$unlock.Invoke($guard, [object[]]@())
+    if ($model.File.OpenFile($copy) -ne 0) { throw 'The plugin-managed same-path reopen failed.' }
+    [void]$relock.Invoke($guard, [object[]]@())
+    # A delayed unlock produced by the plugin's own OpenFile must be
+    # normalized before resuming user-interaction monitoring.
+    if ($model.SetModelIsLocked($false) -ne 0) { throw 'Cannot simulate reload-induced unlock.' }
+    [void]$afterRestore.Invoke($guard, [object[]]@())
+    [void]$ready.Invoke($guard, [object[]]@())
+    if (-not $model.GetModelIsLocked() -or $unexpected.GetValue($guard)) {
+        throw 'The pre-mesh reopen was incorrectly reported as a manual unlock.'
+    }
+    'MANAGED_REOPEN_RELOCK=PASS FALSE_UNLOCK_WARNING=ABSENT'
     foreach ($phase in @('JUST_OPENED','BEFORE_GENERATE','PREVIEW_FIRST','PREVIEW_SECOND',
         'PREVIEW_THIRD','AFTER_APPLY','AFTER_UNDO')) {
         if ($phase -eq 'BEFORE_GENERATE') {

@@ -5,7 +5,7 @@ param([Parameter(Mandatory=$true)][string]$Candidate,
 $ErrorActionPreference = 'Stop'
 $parent = Join-Path $env:TEMP 'opencode'
 $root = Split-Path -Parent $PSScriptRoot
-$installed = Join-Path $env:LOCALAPPDATA 'Programs\SAP2000QuadMesher'
+$installed = Split-Path -Parent (Resolve-Path -LiteralPath $Candidate).Path
 if (-not (Test-Path -LiteralPath $parent -PathType Container) -or
     -not $Trial.StartsWith(($parent.TrimEnd('\') + '\'),[StringComparison]::OrdinalIgnoreCase) -or
     (Test-Path -LiteralPath $Trial) -or
@@ -24,8 +24,6 @@ Copy-Item -LiteralPath $first -Destination $firstCopy
 Copy-Item -LiteralPath $second -Destination $secondCopy
 $package = Join-Path $Trial 'plugin'
 Copy-Item -LiteralPath $installed -Destination $package -Recurse
-Copy-Item -LiteralPath $Candidate -Destination (Join-Path $package 'SapQuadTransitionPlugin.dll') -Force
-Copy-Item -LiteralPath (Join-Path $root 'SapQuadTransitionPlugin\sap_gmsh_mesher.py') -Destination $package -Force
 $runner = Join-Path $Trial 'runner'
 & dotnet build (Join-Path $PSScriptRoot 'TestV2ModelSwitch.csproj') -c Release -o $runner --nologo -v quiet
 if ($LASTEXITCODE -ne 0) { throw 'Model-switch integration runner build failed.' }
