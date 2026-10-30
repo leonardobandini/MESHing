@@ -5,7 +5,7 @@ import sys
 from mesher_backend import ALLOWED_SCRIPTS, main, self_test
 
 
-MESHING_VERSION = "3.0.4"
+MESHING_VERSION = "3.0.5"
 
 ALLOWED_SCRIPTS.add("sap_gmsh_mesher.py")
 

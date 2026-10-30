@@ -1,5 +1,12 @@
 # MESHing — changelog
 
+## MESHing 3.0.5 — release pubblicata, non contrassegnata "Latest"
+
+- In SAP2000 FAST Genera inserisce direttamente nodi/aree numerati e rimuove in batch le aree originali; Applica conferma la mesh e Annulla mesh ricarica l'SDB salvato prima della generazione. Se l'SDB è stato modificato sul disco, il ripristino si ferma e conserva la copia privata.
+- Il comando Annulla generazione ricarica il modello pre-mesh anche in Standard e CSiBridge, appena termina la chiamata API in corso. La richiesta di annullamento rimane registrata fino alla verifica finale.
+- Eliminato il tooltip esteso dal messaggio di completamento; corretti testi di trasferimento, preferenze dei tab e ordine delle finestre rispetto alle altre applicazioni.
+- Scaricabile soltanto dalla pagina della versione; `Latest`, il link statico e il feed degli aggiornamenti restano sulla release stabile selezionata.
+
 ## MESHing 3.0.4 — release non contrassegnata "Latest"
 
 - Risolto il rallentamento dello snapshot introdotto dal controllo delle impostazioni internazionali della 3.0.3: il nome e l'ora di avvio del processo ospite sono acquisiti una sola volta, mentre la data di modifica del registro resta controllata durante il lavoro. Su `Circular_Floor` a 50 cm lo snapshot è passato dai 61–113 s osservati nella 3.0.3 a 9,6–14,6 s nella build corretta; senza profilatore 9,6 s. Il salvataggio e lo snapshot hanno ora messaggi distinti nell'interfaccia.

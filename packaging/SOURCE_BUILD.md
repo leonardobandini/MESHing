@@ -38,7 +38,7 @@ foreach ($name in @('occt-7.8.1', 'fltk-1.3.11', 'med-4.1.0')) {
     Copy-Item -LiteralPath "third_party\native-sources\$name-source.tar.gz" -Destination "packaging\cache\$name-source.tar.gz"
 }
 powershell -NoProfile -ExecutionPolicy Bypass -File packaging\build-release-v2.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File packaging\PrepareV304Candidate.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File packaging\PrepareV305Candidate.ps1
 ```
 
 The release script compiles `SapQuadTransitionPlugin/SapGmshReplacement.csproj`
@@ -59,6 +59,13 @@ observing its version in the bundled DLL's execution banner; CGNS has no
 revision exposed by the unmodified official Gmsh wheel;
 neither the sources nor this script claim a bit-for-bit rebuild of that wheel.
 `-SkipBackendBuild` reuses a previously built frozen backend.
+
+`PrepareV305Candidate.ps1` stages eight versioned binary/source assets and
+checksums under `artifacts/candidate-v3.0.5/`. This non-Latest release does not
+contain a `MESHing-latest.zip` alias; the public moving download and in-plugin
+update feed continue to resolve to the separately selected Latest release.
+The 3.0.5 source ZIP includes `DiskModelCheckpoint.cs` alongside the unchanged
+source for the legacy CSV rollback on non-FAST paths.
 
 `PrepareV304Candidate.ps1` creates `artifacts/candidate-v3.0.4/` with only ten
 MESHing assets. During local assembly, `MESHing-latest.zip` is copied byte-for-byte
