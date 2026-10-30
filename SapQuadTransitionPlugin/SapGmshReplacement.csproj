@@ -12,8 +12,8 @@
     <RootNamespace>SapQuadTransitionPlugin</RootNamespace>
     <DefineConstants>$(DefineConstants);GMSH_V2;GMSH_V2_REPLACE_V1</DefineConstants>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <Version>3.0.6</Version>
-    <FileVersion>3.0.6.0</FileVersion>
+    <Version>3.0.7</Version>
+    <FileVersion>3.0.7.0</FileVersion>
     <CSiApiPath Condition="'$(CSiApiPath)' == '' and Exists('$(Sap2000InstallDir)\CSiAPIv1.dll')">$(Sap2000InstallDir)\CSiAPIv1.dll</CSiApiPath>
     <CSiApiPath Condition="'$(CSiApiPath)' == '' and Exists('$(CSiBridgeInstallDir)\CSiAPIv1.dll')">$(CSiBridgeInstallDir)\CSiAPIv1.dll</CSiApiPath>
     <CSiApiPath Condition="'$(CSiApiPath)' == ''">$(CSiBridgeInstallDir)\CSiAPIv1.dll</CSiApiPath>

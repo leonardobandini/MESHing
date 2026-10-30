@@ -36,7 +36,7 @@ try {
         $sourceLink = @($dialog.Controls | Where-Object {
             $_ -is [Windows.Forms.LinkLabel] -and $_.Tag -eq 'license-link'
         })
-        Assert ($dialog.Text -eq 'MESHing 3.0.6' -and $headerTitle.Text -eq 'MESHing' -and
+        Assert ($dialog.Text -eq 'MESHing 3.0.7' -and $headerTitle.Text -eq 'MESHing' -and
             $headerTitle.Left -eq 22 -and $headerTitle.Top -eq 13 -and
             $dialog.ClientSize.Width -eq 570 -and $dialog.ClientSize.Height -eq 762 -and
             $companyLogo.Count -eq 1 -and $companyLogo[0].Width -eq 46 -and

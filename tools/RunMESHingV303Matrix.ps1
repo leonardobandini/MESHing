@@ -5,7 +5,9 @@ param([Parameter(Mandatory=$true)][string]$PluginPath,
       [int]$CaseTimeoutSeconds = 480,
       [switch]$VerifyOnly,
       [switch]$Resume,
-      [switch]$ConcurrentHosts,
+       [switch]$ConcurrentHosts,
+       [switch]$ApplyOnly,
+       [switch]$AllowExistingHosts,
       [string]$VersionLabel = '3.0.3')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -109,12 +111,12 @@ function Verify-Bridge([string]$mode) {
     "BRIDGE_$($mode.ToUpperInvariant())=36/36"
 }
 if (-not $VerifyOnly) {
-    if (@(Get-Process SAP2000,CSiBridge -ErrorAction SilentlyContinue).Count) {
+    if (-not $AllowExistingHosts -and @(Get-Process SAP2000,CSiBridge -ErrorAction SilentlyContinue).Count) {
         throw 'Close SAP2000 and CSiBridge before starting owned regression sessions.'
     }
     if (-not $Resume) { $null = New-Item -ItemType Directory -Path $ResultsRoot }
 }
-foreach ($mode in @('apply','undo')) {
+foreach ($mode in $(if ($ApplyOnly) { @('apply') } else { @('apply','undo') })) {
     if ($ConcurrentHosts -and -not $VerifyOnly -and -not ($Resume -and $mode -eq 'apply')) {
         $sapPath = Join-Path $ResultsRoot ('sap-' + $mode)
         $arguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -PluginPath "{1}" -ResultsRoot "{2}" -WorkerCount 3 -CaseTimeoutSeconds {3}' -f `
@@ -146,4 +148,8 @@ foreach ($mode in @('apply','undo')) {
     }
     Verify-Inputs
 }
-('MESHING_{0}_MATRIX=PASS SAP_APPLY=36 SAP_UNDO=36 BRIDGE_APPLY=36 BRIDGE_UNDO=36 TOTAL=144' -f $VersionLabel.Replace('.', '_'))
+if ($ApplyOnly) {
+    ('MESHING_{0}_MATRIX=PASS SAP_APPLY=36 BRIDGE_APPLY=36 TOTAL=72 UNDO=NOT_RUN' -f $VersionLabel.Replace('.', '_'))
+} else {
+    ('MESHING_{0}_MATRIX=PASS SAP_APPLY=36 SAP_UNDO=36 BRIDGE_APPLY=36 BRIDGE_UNDO=36 TOTAL=144' -f $VersionLabel.Replace('.', '_'))
+}

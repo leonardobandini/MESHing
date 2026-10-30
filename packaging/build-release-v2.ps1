@@ -147,7 +147,7 @@ try {
     # Use the newest locally available previous build for the upgrade fixture;
     # an extracted source ZIP without previous builds remains self-contained.
     $availablePrevious = @(Get-ChildItem -LiteralPath $artifacts -Directory | ForEach-Object {
-        if ($_.Name -match '^Sap2000QuadMesher-(2[.]0[.]\d+)$' -and
+         if ($_.Name -match '^Sap2000QuadMesher-((?:2|3)[.]0[.]\d+)$' -and
             [version]$Matches[1] -lt [version]$version -and
             (Test-Path -LiteralPath (Join-Path $_.FullName 'SQMPluginInstaller.exe') -PathType Leaf)) {
             [pscustomobject]@{ Name = $Matches[1]; Version = [version]$Matches[1] }

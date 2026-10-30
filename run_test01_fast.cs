@@ -19,6 +19,8 @@ public class RunTest01Fast
     const string ParentFixtureGroup="SQM_PARENT_FIXTURE_GROUP";
     const string ParentFixtureLoad="SQM_PARENT_FIXTURE_LOAD";
     static string parentFixtureMaterial;
+    static string parentFixtureSection;
+    static double[] parentFixtureModifiers;
     static string parentFixtureDesignProcedure="Concrete Shell Design";
     static bool parentEdgeFixture;
     static double[][] parentFixtureEdge;
@@ -34,6 +36,8 @@ public class RunTest01Fast
     static void RequireFixture(int code,string action){if(code!=0)throw new InvalidOperationException("Parent-child fixture "+action+" returned "+code);}
     static void AssignParentFixture(cSapModel model,string parent)
     {
+        parentFixtureSection="";
+        RequireFixture(model.AreaObj.GetProperty(parent,ref parentFixtureSection),"get parent section");
         RequireFixture(model.GroupDef.SetGroup(ParentFixtureGroup),"create group");
         RequireFixture(model.AreaObj.SetGroupAssign(parent,ParentFixtureGroup,false,eItemType.Objects),"area group");
         RequireFixture(model.LoadPatterns.Add(ParentFixtureLoad,eLoadPatternType.Other,0,true),"load pattern");
@@ -45,6 +49,7 @@ public class RunTest01Fast
         RequireFixture(model.AreaObj.GetModifiers(parent,ref modifiers),"get modifiers");
         if(modifiers==null||modifiers.Length!=10)throw new InvalidOperationException("Parent modifiers missing.");
         modifiers[0]=.72;
+        parentFixtureModifiers=modifiers.ToArray();
         RequireFixture(model.AreaObj.SetModifiers(parent,ref modifiers,eItemType.Objects),"modifiers");
         RequireFixture(model.AreaObj.SetLocalAxes(parent,12.5,eItemType.Objects),"axes");
         RequireFixture(model.AreaObj.SetMass(parent,23,true,eItemType.Objects),"mass");
@@ -104,6 +109,7 @@ public class RunTest01Fast
                 edgeSpringLength+=FixtureChildEdgeLength(model,area,springFaces[i]);
             bool bottomSpring=Enumerable.Range(0,springCount).Any(i=>springFaces[i]==-1&&Math.Abs(stiffness[i]-725)<1e-7);
             double angle=0,mass=0;bool advanced=false,edge=false;
+            string section="";RequireFixture(model.AreaObj.GetProperty(area,ref section),"check section "+area);
             RequireFixture(model.AreaObj.GetLocalAxes(area,ref angle,ref advanced),"check axes "+area);
             RequireFixture(model.AreaObj.GetMass(area,ref mass),"check mass "+area);
             RequireFixture(model.AreaObj.GetEdgeConstraint(area,ref edge),"check edge "+area);
@@ -111,7 +117,10 @@ public class RunTest01Fast
             double temperature=0;
             RequireFixture(model.AreaObj.GetMaterialOverwrite(area,ref material),"check material overwrite "+area);
             RequireFixture(model.AreaObj.GetMatTemp(area,ref temperature,ref temperaturePattern),"check material temperature "+area);
-            if(groups==null||!groups.Contains(ParentFixtureGroup)||!bottomSpring||modifiers==null||Math.Abs(modifiers[0]-.72)>1e-7||
+            if(groups==null||!groups.Contains(ParentFixtureGroup)||!bottomSpring||modifiers==null||
+                modifiers.Length!=parentFixtureModifiers.Length||
+                !modifiers.Zip(parentFixtureModifiers,(a,b)=>Math.Abs(a-b)<=1e-7).All(equal=>equal)||
+                section!=parentFixtureSection||
                 loadCount!=1||!bottomPressure||Math.Abs(uniformValue-3.75)>1e-7||uniformPattern!=ParentFixtureLoad||
                 Math.Abs(temperature-26.5)>1e-7||
                 material!=parentFixtureMaterial||Math.Abs(angle-12.5)>1e-7||Math.Abs(mass-23)>1e-7||!edge)
@@ -736,7 +745,15 @@ public class RunTest01Fast
             bool designFixture=parentFixture&&Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_DESIGN_FIXTURE")=="1";
             if(designFixture)AssignDesignFixture(m,selectedAreas[0]);
             if(atomicExample&&!string.IsNullOrEmpty(screenshotPath))RenderDetailedModelDiagram(m,screenshotPath.Replace("-result.svg","-source.svg"),screenshotView,"Source geometry",true);
-            m.SelectObj.ClearSelection();foreach(string a in selectedAreas)m.AreaObj.SetSelected(a,true,eItemType.Objects);foreach(string p in selectedPoints)m.PointObj.SetSelected(p,true,eItemType.Objects);foreach(string f in selectedFrames)m.FrameObj.SetSelected(f,true,eItemType.Objects);if(test06)SelectTest06Boundary(m);
+            if(atomicExample&&Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_SELECT_ALL")=="1"){
+                if(m.SelectObj.All(false)!=0)throw new Exception("select all");
+                int selectedCount=0;int[] selectedTypes=null;string[] selectedNames=null;
+                if(m.SelectObj.GetSelected(ref selectedCount,ref selectedTypes,ref selectedNames)!=0)throw new Exception("read all selection");
+                selectedAreas=Enumerable.Range(0,selectedCount).Where(i=>selectedTypes[i]==5).Select(i=>selectedNames[i]).ToArray();
+                selectedPoints=Enumerable.Range(0,selectedCount).Where(i=>selectedTypes[i]==1).Select(i=>selectedNames[i]).ToArray();
+                selectedFrames=Enumerable.Range(0,selectedCount).Where(i=>selectedTypes[i]==2).Select(i=>selectedNames[i]).ToArray();
+                Console.WriteLine("atomic-select-all areas="+selectedAreas.Length+" points="+selectedPoints.Length+" frames="+selectedFrames.Length+" objects="+selectedCount);
+            }else{m.SelectObj.ClearSelection();foreach(string a in selectedAreas)m.AreaObj.SetSelected(a,true,eItemType.Objects);foreach(string p in selectedPoints)m.PointObj.SetSelected(p,true,eItemType.Objects);foreach(string f in selectedFrames)m.FrameObj.SetSelected(f,true,eItemType.Objects);if(test06)SelectTest06Boundary(m);}
             if(atomicExample){
                 Environment.SetEnvironmentVariable("SAP_QUAD_ATOMIC_PROFILE",workflowProfile);
                 Environment.SetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE",meshSize);

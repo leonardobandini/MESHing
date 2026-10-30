@@ -14,12 +14,12 @@ VSVersionInfo(
       StringTable('040904B0', [
         StringStruct('CompanyName', 'MESHing'),
         StringStruct('FileDescription', 'MESHing Gmsh meshing backend'),
-        StringStruct('FileVersion', '3.0.6.0'),
+        StringStruct('FileVersion', '3.0.7.0'),
         StringStruct('InternalName', 'SapQuadMesherBackend'),
         StringStruct('LegalCopyright', 'Copyright (C) 2026 Leonardo Bandini'),
         StringStruct('OriginalFilename', 'SapQuadMesherBackend.exe'),
         StringStruct('ProductName', 'MESHing'),
-        StringStruct('ProductVersion', '3.0.6.0')
+        StringStruct('ProductVersion', '3.0.7.0')
       ])
     ]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

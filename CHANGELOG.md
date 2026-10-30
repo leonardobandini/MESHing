@@ -1,5 +1,13 @@
 # MESHing — changelog
 
+## MESHing 3.0.7
+
+- FAST non passa più silenziosamente all'inserimento Standard quando una tabella non è supportata: il preflight interrompe Genera prima di modificare il modello. Standard rimane una modalità esplicita per i test di compatibilità.
+- Le righe di continuazione dei poligoni sorgente in SAP2000 e CSiBridge 27.1 sono importate come CSV senza i soli campi vuoti finali; nodi, ordine e GUID del poligono sono verificati prima del commit. Anche una selezione con un'area iniziale a cinque nodi conserva FAST e non richiede lo snapshot CSV legacy.
+- Il commit FAST con nomi numerici definitivi e ripristino tramite SDB/BDB pre-mesh è disponibile in SAP2000 e CSiBridge. La selezione massiva dopo Genera non ricalcola migliaia di contesti via COM a ogni aggiornamento; la finestra riprende quando si seleziona un insieme gestibile.
+- I trasferimenti madre→figli di proprietà, gruppi, carichi, molle, assi, massa, modificatori e vincoli sono verificati su ogni shell della fixture dedicata; i limiti delle procedure di progetto non leggibili restano segnalati.
+- Matrice completa Genera su 36 casi SAP2000 e 36 CSiBridge: 72/72 PASS, senza Undo; per host 34 trasferimenti FAST e 2 Standard esplicitamente richiesti, nessun fallback automatico. Fixture dettagliata madre→figlie: 50/50 shell verificate per host.
+
 ## MESHing 3.0.6 — release Latest
 
 - Genera completa anche l'applicazione della mesh: non esiste più la commutazione del pulsante in Applica. Annulla mesh resta disponibile per la generazione più recente fino a una nuova generazione o alla chiusura del plugin.

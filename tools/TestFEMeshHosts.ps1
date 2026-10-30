@@ -5,6 +5,7 @@ param([Parameter(Mandatory=$true)][ValidateSet('CSiBridge','ETABS')][string]$Hos
        [switch]$InspectOnly,
        [switch]$Undo,
        [switch]$AllAtomic,
+       [switch]$TransferFixture,
        [ValidatePattern('^nTEST\d{3}$')][string[]]$CaseIds=@(),
         [string]$Ids='',
         [string]$InputModelDirectory='', [string]$ManifestPath='')
@@ -20,6 +21,12 @@ if(-not(Test-Path -LiteralPath $temp -PathType Container) -or
 }
 if($Ids -and $CaseIds.Count){throw 'Use either Ids or CaseIds, not both.'}
 $requested=if($Ids){@($Ids.Split(',')|ForEach-Object {$_.Trim()})}else{@()}
+if($TransferFixture){
+    if($HostKind -ne 'CSiBridge' -or $requested.Count -ne 1 -or [string]$requested -ne 'nTEST001' -or $Undo){
+        throw 'The parent-child transfer fixture requires a single CSiBridge/nTEST001 Generate.'
+    }
+    . (Join-Path $PSScriptRoot 'BridgeParentFixture.ps1')
+}
 if($requested.Count -and ($HostKind -ne 'CSiBridge' -or
     @($requested|Where-Object {$_ -notmatch '^nTEST\d{3}$'}).Count -or
     @($requested|Select-Object -Unique).Count -ne $requested.Count)){
@@ -101,6 +108,7 @@ try {
             [IO.File]::WriteAllText((Join-Path $folder 'input.sha256'),$hash)
             $code=$model.File.OpenFile($input)
             if($code -ne 0){throw "$HostKind cannot open copied $id SDB (code=$code)."}
+            if($TransferFixture){Set-BridgeParentFixture $model 'A1'}
         } else {
             $code=$model.InitializeNewModel([CSiAPIv1.eUnits]::kN_m_C)
             if($code -ne 0){throw "ETABS cannot initialize new model ($code)."}
@@ -294,6 +302,7 @@ try {
             $preexisting=@($reopenedNames|Where-Object {$_ -match '^QT(?:P|A|B|UNDO|R)' -and $originalAreaSet.Contains($_)}).Count +
                 @($reopenedPointNames|Where-Object {$_ -match '^QT(?:P|A|B|UNDO|R)' -and $originalPoints.Contains($_)}).Count
             "$HostKind/$id APPLIED_OBJECT_NAMES=PASS POINTS=$reopenedPoints AREAS=$reopened PREEXISTING_QT=$preexisting"
+            if($TransferFixture){Assert-BridgeParentFixture $model @($reopenedNames)}
         }
         "$HostKind/$id PASS MODE=$(if($Undo){'UNDO'}else{'APPLY'}) BEFORE=$sourceAreas AFTER=$after OUTPUT=$output"
         $completed++

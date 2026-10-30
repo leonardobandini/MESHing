@@ -61,10 +61,10 @@ neither the sources nor this script claim a bit-for-bit rebuild of that wheel.
 `-SkipBackendBuild` reuses a previously built frozen backend.
 
 `PrepareV306Candidate.ps1` stages ten release assets and checksums under
-`artifacts/candidate-v3.0.6/`, including a `MESHing-latest.zip` byte-identical
-to the versioned installer. Publishing 3.0.6 as Latest moves the public link
+`artifacts/candidate-v3.0.7/`, including a `MESHing-latest.zip` byte-identical
+to the versioned installer. Publishing 3.0.7 as Latest moves the public link
 and the in-plugin update feed to this release.
-The 3.0.6 help is generated before building the plug-in and packaging sources.
+The 3.0.7 help is generated before building the plug-in and packaging sources.
 
 `PrepareV305Candidate.ps1` stages eight versioned binary/source assets and
 checksums under `artifacts/candidate-v3.0.5/`. This non-Latest release does not

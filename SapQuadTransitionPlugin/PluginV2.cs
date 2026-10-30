@@ -39,7 +39,7 @@ namespace SapQuadTransitionPlugin
         private const int AreaObjectType = 5;
         private const int SolidObjectType = 6;
         private const int LinkObjectType = 7;
-        private const string PluginVersion = "3.0.6";
+        private const string PluginVersion = "3.0.7";
         private const string WindowTitle = "MESHing " + PluginVersion;
         private const string UpdateManifestUrl = "https://api.github.com/repos/leonardobandini/MESHing/releases/latest";
         private const string LatestDownloadUrl = "https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip";
@@ -823,6 +823,9 @@ namespace SapQuadTransitionPlugin
 
         private sealed class LiveSelection
         {
+            // Refreshing thousands of SAP shells through per-object COM calls
+            // would monopolize the host after Select All on a generated mesh.
+            internal const int MaximumLiveAreas = 500;
             public readonly int[] Types;
             public readonly string[] Names, Areas, Points, Frames;
             public readonly int Links;
@@ -846,13 +849,15 @@ namespace SapQuadTransitionPlugin
                 Frames = Enumerable.Range(0, count).Where(i => Types[i] == FrameObjectType)
                     .Select(i => Names[i]).Distinct().ToArray();
                 Links = Types.Count(type => type == LinkObjectType);
-                identity = Enumerable.Range(0, count).Select(i => Types[i] + ":" + Names[i])
-                    .OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray();
+                identity = Areas.Length > MaximumLiveAreas ? null :
+                    Enumerable.Range(0, count).Select(i => Types[i] + ":" + Names[i])
+                        .OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToArray();
             }
 
             public bool SameObjects(LiveSelection other)
             {
-                return other != null && identity.SequenceEqual(other.identity, StringComparer.OrdinalIgnoreCase);
+                return other != null && identity != null && other.identity != null &&
+                    identity.SequenceEqual(other.identity, StringComparer.OrdinalIgnoreCase);
             }
         }
 
@@ -1056,8 +1061,10 @@ namespace SapQuadTransitionPlugin
                 Console.WriteLine("mesh-stage=dialog-visible");
                 if (!modelHasSavedFile && !automatedExample) dialog.ShowNeverSavedModelWarning();
                 if (automatedExample) dialog.ApplyAutomatedOptions();
+                bool oversizedSelection = false;
                 Action<bool> refreshSelection = delegate(bool force)
                 {
+                    var refreshClock = Stopwatch.StartNew();
                     bool savedNow = HasSavedModelFile(model);
                     if (savedNow && !modelHasSavedFile)
                     {
@@ -1074,6 +1081,19 @@ namespace SapQuadTransitionPlugin
                     else if (!savedNow) dialog.SetRequiresSavedModel(true);
                     if (sessionLock.Active) sessionLock.CheckReady();
                     LiveSelection next = new LiveSelection(model);
+                    if (next.Areas.Length > LiveSelection.MaximumLiveAreas)
+                    {
+                        if (!oversizedSelection || next.Areas.Length != areas.Length || force)
+                        {
+                            selection = next;
+                            areas = next.Areas;
+                            oversizedSelection = true;
+                            dialog.UpdateOversizedSelection(areas.Length, next.Frames.Length,
+                                next.Links, next.Points.Length, LiveSelection.MaximumLiveAreas);
+                            RecordPhase("csharp-selection-phases.csv", "oversized-selection-skipped-contexts", refreshClock);
+                        }
+                        return;
+                    }
                     string nextModelPath = model.GetModelFilename(true);
                     if (!string.Equals(nextModelPath, selectionModelPath, StringComparison.OrdinalIgnoreCase))
                         scopeNewModelUnits();
@@ -1081,6 +1101,7 @@ namespace SapQuadTransitionPlugin
                     if (!force && next.SameObjects(selection) &&
                         string.Equals(nextModelPath, selectionModelPath, StringComparison.OrdinalIgnoreCase) &&
                         string.Equals(nextLengthUnit, dialog.LengthUnit, StringComparison.OrdinalIgnoreCase)) return;
+                    oversizedSelection = false;
                     List<AreaContext> updated = next.Areas.Length > 0
                         ? BuildAreaContexts(model, next.Areas, next.Points, next.Frames)
                         : new List<AreaContext>();
@@ -1106,6 +1127,7 @@ namespace SapQuadTransitionPlugin
                         updatedPointGroups, updatedOpeningGroups, updatedAxes);
                     Console.WriteLine("mesh-stage=selection-updated objects=" + next.Types.Length +
                         " areas=" + areas.Length);
+                    RecordPhase("csharp-selection-phases.csv", "refresh-selection-and-contexts", refreshClock);
                 };
                 var selectionClock = Stopwatch.StartNew();
                 var lockClock = Stopwatch.StartNew();
@@ -1128,7 +1150,7 @@ namespace SapQuadTransitionPlugin
                             finally { lockClock.Restart(); }
                         }
                         if (!automatedExample && dialog.CanRefreshSelection &&
-                            selectionClock.ElapsedMilliseconds >= 350)
+                            selectionClock.ElapsedMilliseconds >= (oversizedSelection ? 2000 : 350))
                         {
                             try { refreshSelection(false); }
                             catch (Exception error)
@@ -1180,9 +1202,10 @@ namespace SapQuadTransitionPlugin
                     bool requestedSymmetry = dialog.Symmetric, requestedBands = dialog.StructuredSectorBands;
                     bool requestedStrict = dialog.StrictMaximumSize;
                     bool useTabularUndo = dialog.FastMode, insertionStarted = false;
-                    // Experimental transaction is SAP2000-only until its
-                    // separate CSiBridge/ETABS table semantics are verified.
-                    bool directCommit = dialog.FastMode && HostProductName() == "SAP2000" &&
+                    // The numeric FAST transaction is verified on SAP2000 and
+                    // CSiBridge; ETABS keeps its separate table/commit path.
+                    bool directCommit = dialog.FastMode &&
+                        (HostProductName() == "SAP2000" || HostProductName() == "CSiBridge") &&
                         Environment.GetEnvironmentVariable("SAP_QUAD_TRIAL_DIRECT_COMMIT") != "0";
                     bool designTransferLoss = false;
                     try
@@ -1272,25 +1295,16 @@ namespace SapQuadTransitionPlugin
                         RecordGenerationPhase("verify-reused-joints-and-polygon-schema", generationClock);
                         if (Environment.GetEnvironmentVariable("SAP_GMSH_V2_ATOMIC_UI_PREVIEW") == "1")
                             Console.WriteLine("mesh-topology-unique-new-joints=pass");
-                        bool useFastInsertion = dialog.FastMode && pointIndex.IncompletePolygonAreas == 0 &&
-                            (!directCommit || SupportsFastTableInsertion(model));
-                        if (directCommit && !useFastInsertion)
+                        bool useFastInsertion = dialog.FastMode;
+                        bool polygonCsvInsertion = useFastInsertion && pointIndex.IncompletePolygonAreas > 0;
+                        if (useFastInsertion)
                         {
-                            // No model objects have changed yet. Keep the established
-                            // Standard rollback for models without tabular FAST support.
-                            directCommit = false;
-                            csvSnapshot = ModelCsvSnapshot.Capture(model, dialog.PumpCancellation);
-                            RecordGenerationPhase("capture-rollback-snapshot", generationClock);
-                        }
-                        if (dialog.FastMode && !useFastInsertion)
-                        {
-                            Console.WriteLine("mesh-insertion=standard reason=polygon-continuation-blank-joints areas=" +
-                                pointIndex.IncompletePolygonAreas);
-                            dialog.SetInsertionNotice(L(
-                                "FAST unavailable: retained polygons have incomplete editing-table rows; " +
-                                "Standard insertion was used to preserve them.",
-                                "FAST non disponibile: poligoni conservati hanno righe incomplete nella tabella; " +
-                                "usato l'inserimento Standard per preservarli."));
+                            // A requested FAST operation must not silently become
+                            // per-object Standard insertion or lose assignments.
+                            SupportsFastTableInsertion(model);
+                            if (polygonCsvInsertion && (!directCommit || !SupportsPolygonCsvInsertion(model)))
+                                throw new InvalidOperationException("FAST polygon-continuation CSV import is not " +
+                                    "verified on this host/version. The model was not modified.");
                         }
                         useTabularUndo = useFastInsertion;
                         if (useFastInsertion)
@@ -1333,13 +1347,11 @@ namespace SapQuadTransitionPlugin
                                     chosen.Meshes[0].Property, chosen.Meshes[0].Angle, chosen.Meshes[0].Mass,
                                     chosen.Meshes[0].EdgeConstraint, chosen.Meshes[0].Loads, chosen.Meshes[0].Mesh,
                                     dialog, chosen.Meshes[0].OriginalPoints, pointIndex) }
-                                : ApplyMeshesFast(model, chosen.Meshes, dialog, pointIndex, fastSnapshot, directCommit);
+                                : ApplyMeshesFast(model, chosen.Meshes, dialog, pointIndex, fastSnapshot,
+                                    directCommit, polygonCsvInsertion);
                             if (operations.Any(operation => !operation.FastMode))
-                            {
-                                useTabularUndo = false;
-                                fastSnapshot = null;
-                            }
-                            else Console.WriteLine("mesh-insertion=fast areas=" + operations.Count);
+                                throw new InvalidDataException("FAST returned a Standard insertion unexpectedly.");
+                            Console.WriteLine("mesh-insertion=fast areas=" + operations.Count);
                             for (int i = 0; i < operations.Count; i++)
                                 results.Add(new MeshAttemptResult(operations[i], chosen.Meshes[i].Quality));
                             dialog.SetMeshingAreas(results.Count, contexts.Count);
@@ -1412,7 +1424,7 @@ namespace SapQuadTransitionPlugin
                                 Stopwatch reloadClock = Stopwatch.StartNew();
                                 // Generate has already completed the mesh on every
                                 // host. Reopen its saved pre-mesh model for Undo,
-                                // including unchanged and Standard fallback areas.
+                                // including unchanged and explicitly Standard areas.
                                 diskCheckpoint.Restore(model);
                                 RecordPhase("csharp-undo-phases.csv", "reload-pre-mesh-model", reloadClock);
                                 dialog.ThrowIfRegionalSettingsChanged();
@@ -1656,7 +1668,7 @@ namespace SapQuadTransitionPlugin
                         }
                         // The completed generation keeps its Undo available
                         // while the selection changes for the next operation.
-                        if (!automatedExample && selectionClock.ElapsedMilliseconds >= 350)
+                        if (!automatedExample && selectionClock.ElapsedMilliseconds >= (oversizedSelection ? 2000 : 350))
                         {
                             try
                             {
@@ -1883,12 +1895,14 @@ namespace SapQuadTransitionPlugin
         {
             string denseBoundaries = null;
             string gmshBatchDirectory = null;
+            var candidateClock = Stopwatch.StartNew();
             try
             {
                 string[] constraintPoints = selectedPoints.Except(holePointNames).ToArray();
                 TraceCancellationStage("contexts-start");
                 List<AreaContext> contexts = BuildAreaContexts(model, areas, constraintPoints, selectedFrames,
                     dialog.PumpCancellation);
+                RecordPhase("csharp-candidate-phases.csv", "read-area-contexts", candidateClock);
                 TraceCancellationStage("contexts-complete");
                 CaptureDesignProcedures(model, contexts);
                 if (dialog.GenerateCircularHoles)
@@ -1903,6 +1917,7 @@ namespace SapQuadTransitionPlugin
                 HarmonizeSharedBoundaries(contexts, dialog.MaxSize, dialog.PumpCancellation
                     , dialog.PreserveSelectedBoundaryEdges
                     );
+                RecordPhase("csharp-candidate-phases.csv", "harmonize-shared-edges", candidateClock);
                 TraceCancellationStage("shared-boundaries-complete");
                 if (dialog.GenerateHoles)
                     HarmonizeAreaEdgeIntersections(contexts, dialog.MaxSize, dialog.PumpCancellation);
@@ -1917,6 +1932,7 @@ namespace SapQuadTransitionPlugin
                 ValidateCircularHoleConstraints(contexts);
                 if (activeAxis != null && contexts.Count > 1)
                     ValidateReflectedConstraints(contexts, activeAxis);
+                RecordPhase("csharp-candidate-phases.csv", "prepare-holes-and-constraints", candidateClock);
                 dialog.ThrowIfCancellationRequested();
                 if (dialog.StructuredSectorBands && contexts.Count > 1 && !dialog.PreferRegularMesh &&
                     !dialog.GenerateCircularHoles && !dialog.Symmetric)
@@ -1970,11 +1986,13 @@ namespace SapQuadTransitionPlugin
                         manifest.Add(new { boundary = file, mesh = "mesh-" + i.ToString(CultureInfo.InvariantCulture) + ".csv" });
                     }
                     string batchInput = Path.Combine(gmshBatchDirectory, "manifest.json");
-                    File.WriteAllText(batchInput, new JavaScriptSerializer().Serialize(new { areas = manifest }), Encoding.UTF8);
+                        File.WriteAllText(batchInput, new JavaScriptSerializer().Serialize(new { areas = manifest }), Encoding.UTF8);
+                    RecordPhase("csharp-candidate-phases.csv", "write-gmsh-boundary-manifest", candidateClock);
                     dialog.SetIndeterminate(dialog.GmshOptimizeEnabled
                         ? "Generating and optimizing the mesh..." : "Generating the mesh...");
                     dialog.ShowBatchAreas(contexts.Count);
                     RunMesher("sap_gmsh_mesher.py", batchInput, outputs, dialog.MaxSize, dialog, null);
+                    RecordPhase("csharp-candidate-phases.csv", "run-gmsh-backend", candidateClock);
                 }
                 dialog.SetMeshingAreas(0, contexts.Count);
                 foreach (AreaContext context in contexts)
@@ -2030,12 +2048,16 @@ namespace SapQuadTransitionPlugin
                         throw new InvalidOperationException("Area " + context.Name + ": " + exception.Message, exception);
                     }
                 }
+                RecordPhase("csharp-candidate-phases.csv", "read-and-prepare-area-meshes", candidateClock);
                 ValidateAutomaticIntersectionEdges(contexts, prepared);
                 ValidateSharedAreaEdges(contexts, prepared);
                 if (activeAxis != null && contexts.Count > 1)
                     ValidateSelectionSymmetry(prepared, activeAxis);
                 dialog.ThrowIfCancellationRequested();
-                return new MeshCandidate(dialog, contexts, prepared, symmetryNotice);
+                RecordPhase("csharp-candidate-phases.csv", "verify-shared-mesh-edges", candidateClock);
+                var result = new MeshCandidate(dialog, contexts, prepared, symmetryNotice);
+                RecordPhase("csharp-candidate-phases.csv", "aggregate-quality", candidateClock);
+                return result;
             }
             finally
             {
@@ -4431,33 +4453,11 @@ namespace SapQuadTransitionPlugin
 
         private static List<MeshOperation> ApplyMeshesFast(cSapModel model, List<PreparedMesh> prepared,
             MeshOptionsDialog progress, PointCoordinateIndex existingCoordinates, FastTableSnapshot snapshot,
-            bool finalNumericNames = false)
+            bool finalNumericNames = false, bool polygonCsvInsertion = false)
         {
             // FAST now writes three-node shells with a valid Joint4 padding
             // while retaining NumJoints=3. Triangles alone are not a reason
             // to switch silently to the slower per-object insertion path.
-            if (!SupportsFastTableInsertion(model))
-            {
-                var objectOperations = new List<MeshOperation>();
-                try
-                {
-                    foreach (PreparedMesh item in prepared)
-                        objectOperations.Add(ApplyMesh(model, item.SourceArea, item.Property, item.Angle,
-                            item.Mass, item.EdgeConstraint, item.Loads, item.Mesh, progress,
-                            item.OriginalPoints, existingCoordinates));
-                    return objectOperations;
-                }
-                catch
-                {
-                    if (progress.DetectRegionalChange()) throw;
-                    for (int i = objectOperations.Count - 1; i >= 0; i--)
-                    {
-                        if (progress.DetectRegionalChange()) throw;
-                        UndoMesh(model, objectOperations[i], false);
-                    }
-                    throw;
-                }
-            }
             var clock = Stopwatch.StartNew();
             var responsiveness = Stopwatch.StartNew();
             int staged = 0;
@@ -4540,7 +4540,8 @@ namespace SapQuadTransitionPlugin
             progress.SetIndeterminate("FAST: bulk importing all points and shell elements...");
             WriteEditableTable(model, joints);
             PollCancellation(progress, responsiveness);
-            WriteEditableTable(model, areas);
+            if (polygonCsvInsertion) WritePolygonAreaTableCsv(model, areas);
+            else WriteEditableTable(model, areas);
             PollCancellation(progress, responsiveness);
             WriteEditableTable(model, sections);
             Application.DoEvents();
@@ -4558,6 +4559,7 @@ namespace SapQuadTransitionPlugin
             EditableTable resultingJoints = ReadEditableTable(model, "Joint Coordinates");
             EditableTable resultingAreas = ReadEditableTable(model, "Connectivity - Area");
             EditableTable resultingSections = ReadEditableTable(model, "Area Section Assignments");
+            if (polygonCsvInsertion) VerifyOriginalPolygons(model, snapshot.Areas);
             PollCancellation(progress, responsiveness);
             Dictionary<string, string[]> areaRows = resultingAreas.RowsBy("Area");
             Dictionary<string, string[]> sectionRows = resultingSections.RowsBy("Area");
@@ -4672,9 +4674,6 @@ namespace SapQuadTransitionPlugin
             bool edgeConstraint, AreaLoads areaLoads, MeshData mesh, MeshOptionsDialog progress, PointSnapshot[] originalPoints,
             PointCoordinateIndex existingCoordinates)
         {
-            if (!SupportsFastTableInsertion(model))
-                return ApplyMesh(model, sourceArea, property, angle, mass, edgeConstraint, areaLoads, mesh,
-                    progress, originalPoints, existingCoordinates);
             string token = Guid.NewGuid().ToString("N").Substring(0, 8);
             var operation = new MeshOperation(sourceArea, null, originalPoints) { FastMode = true };
             EditableTable joints = null, areas = null, sections = null;
@@ -4835,6 +4834,84 @@ namespace SapQuadTransitionPlugin
                     table.Data[offset + fourth] = table.Data[offset + third];
             }
             return table;
+        }
+
+        private static bool SupportsPolygonCsvInsertion(cSapModel model)
+        {
+            string version = "";
+            double number = 0;
+            // The trimmed continuation round trip is verified on SAP2000
+            // 27.1.0. Other hosts/versions fail the FAST preflight without
+            // silently changing insertion mode.
+            return (HostProductName() == "SAP2000" || HostProductName() == "CSiBridge") &&
+                model.GetVersion(ref version, ref number) == 0 &&
+                version.StartsWith("27.1.", StringComparison.Ordinal);
+        }
+
+        private static string CsvCell(string value)
+        {
+            value = value ?? "";
+            return value.IndexOfAny(new[] { ',', '"', '\r', '\n' }) < 0 ? value :
+                "\"" + value.Replace("\"", "\"\"") + "\"";
+        }
+
+        private static void WritePolygonAreaTableCsv(cSapModel model, EditableTable table)
+        {
+            // SAP's editing-array import rejects a five-joint polygon's second
+            // row (Area,Joint5,blank,blank,blank). The CSV API accepts the same
+            // row without trailing empty cells; all full rows remain unchanged.
+            int nameField = Array.IndexOf(table.Fields, "Area");
+            int guidField = Array.IndexOf(table.Fields, "GUID");
+            if (nameField < 0 || guidField < 0)
+                throw new InvalidDataException("Polygon CSV import requires Area and GUID fields.");
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var csv = new StringBuilder();
+            csv.AppendLine(string.Join(",", table.Fields.Select(CsvCell)));
+            int trimmed = 0;
+            for (int row = 0; row < table.RecordCount; row++)
+            {
+                int offset = row * table.Fields.Length;
+                string name = table.Data[offset + nameField];
+                bool continuation = !seen.Add(name);
+                int end = table.Fields.Length;
+                if (continuation && string.IsNullOrEmpty(table.Data[offset + guidField]))
+                {
+                    while (end > nameField + 2 && string.IsNullOrEmpty(table.Data[offset + end - 1]))
+                        end--;
+                    if (end < table.Fields.Length) trimmed++;
+                }
+                csv.AppendLine(string.Join(",", Enumerable.Range(0, end)
+                    .Select(index => CsvCell(table.Data[offset + index]))));
+            }
+            if (trimmed == 0) throw new InvalidDataException("No polygon continuation row required CSV trimming.");
+            int version = table.Version;
+            string contents = csv.ToString();
+            Check(model.DatabaseTables.SetTableForEditingCSVString(table.Key, ref version, ref contents, ","),
+                "preparing polygon-safe area connectivity CSV", "DatabaseTables.SetTableForEditingCSVString");
+            Console.WriteLine("mesh-polygon-csv-continuations=" + trimmed);
+        }
+
+        private static void VerifyOriginalPolygons(cSapModel model, EditableTable source)
+        {
+            int nameField = Array.IndexOf(source.Fields, "Area");
+            int guidField = Array.IndexOf(source.Fields, "GUID");
+            int[] joints = Enumerable.Range(1, source.MaxJointField)
+                .Select(index => Array.IndexOf(source.Fields, "Joint" + index)).Where(index => index >= 0).ToArray();
+            var rows = Enumerable.Range(0, source.RecordCount).GroupBy(row => source.Data[row * source.Fields.Length + nameField],
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var polygon in rows.Where(group => group.Count() > 1))
+            {
+                string[] expected = polygon.SelectMany(row => joints.Select(index =>
+                    source.Data[row * source.Fields.Length + index])).Where(value => !string.IsNullOrEmpty(value)).ToArray();
+                int count = 0;
+                string[] actual = null;
+                string guid = "";
+                if (model.AreaObj.GetPoints(polygon.Key, ref count, ref actual) != 0 ||
+                    count != expected.Length || !expected.SequenceEqual(actual ?? new string[0], StringComparer.OrdinalIgnoreCase) ||
+                    model.AreaObj.GetGUID(polygon.Key, ref guid) != 0 ||
+                    guid != source.Data[polygon.First() * source.Fields.Length + guidField])
+                    throw new InvalidDataException("FAST CSV changed original polygon " + polygon.Key + ".");
+            }
         }
 
         private static string[] FindDesignOverwriteTables(cSapModel model)
@@ -8516,6 +8593,19 @@ namespace SapQuadTransitionPlugin
                 UpdateGmshPreview();
             }
             public bool GmshOptimizeEnabled { get { return gmshPreviewOptions.OptimizeValue; } }
+            public void UpdateOversizedSelection(int areas, int frames, int links, int joints, int limit)
+            {
+                if (!CanRefreshSelection) return;
+                hasSelectedAreas = false;
+                SetSelectionCounts(areas, 0, 0, 0, frames, links, joints);
+                UpdateOptionState();
+                generate.Enabled = false;
+                status.Text = L(
+                    "Select All contains " + areas + " areas. Select up to " + limit +
+                    " source areas to mesh; geometry inspection is paused for this selection.",
+                    "Seleziona tutto contiene " + areas + " aree. Selezionare fino a " + limit +
+                    " aree sorgente da meshare; l'analisi geometrica e sospesa per questa selezione.");
+            }
             public void UpdateLiveSelection(int areas, int quads, int triangles, int polygons,
                 int frames, int links, int joints, bool containsFrameConstraints,
                 string[] pointGroups, string[] openingGroups, SymmetryAxis[] axes)
@@ -9644,6 +9734,8 @@ namespace SapQuadTransitionPlugin
                 }
                 if (Environment.GetEnvironmentVariable("SAP_GMSH_V2_ATOMIC_OGRID") == "1")
                     gmshOGrid.Checked = true;
+                if (Environment.GetEnvironmentVariable("SAP_GMSH_V2_ATOMIC_QUAD_QS") == "1")
+                    gmshPreviewOptions.Optimizer.SelectedIndex = 2;
                 if (Environment.GetEnvironmentVariable("SAP_GMSH_V2_ATOMIC_REGULAR_GRID") == "1")
                     gmshPreviewOptions.RegularGrid.Checked = true;
                 if (Environment.GetEnvironmentVariable("SAP_GMSH_V2_ATOMIC_PRESERVE_EDGES") == "1")
