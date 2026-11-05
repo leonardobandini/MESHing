@@ -1,9 +1,29 @@
-# MESHing — stato di consegna (30 ottobre 2026)
+# MESHing — stato di consegna (5 novembre 2026)
 
 Leggere questo file all'inizio della prossima sessione; verificare sempre lo
 stato corrente di Git/GitHub prima di agire, perché può essere cambiato.
 
-## Stato corrente: MESHing 3.0.7
+## Stato corrente: MESHing 3.0.15 pubblicata come Latest
+
+- Release: https://github.com/leonardobandini/MESHing/releases/tag/v3.0.15
+- Tag annotato `v3.0.15` sul commit `a4109191793ef0d6e937ada03691a0b74fc42a6a`,
+  pubblicato su `origin/main`. Autore, committer e tagger verificati con
+  l'identità GitHub richiesta.
+- Dieci asset pubblicati: tutti i digest SHA-256 GitHub coincidono con i file
+  locali in `artifacts/candidate-v3.0.15/`. Installer e alias Latest identici:
+  `e269d9abd8f27e506ca31a881524d5f3453267a4aedada813e5937f1ac52aff5`.
+  Sorgenti: `d0ad617225a719c3ae08bd84af77a014aefa78771ec9bc2661babb55e5029947`.
+- Controlli ripetuti: 35 test Python PASS, 1 skip; help IT/EN PASS; ZIP estratto,
+  verifica installer e due test-install consecutivi PASS. I 468 file di progetto
+  nello ZIP sorgenti coincidono con quelli del tag; nessun file non tracciato incluso.
+- API GitHub Latest conferma `v3.0.15`, non draft e non prerelease. Download
+  `/releases/latest/download/MESHing-latest.zip` verificato con richiesta parziale
+  HTTP 206. La candidata 3.0.15 era già installata localmente.
+- Tentata sincronizzazione dei sorgenti pubblicati sul NAS: chiamata terminata
+  senza esito verificabile. Ripetere `python tools/SyncMESHingNasArchives.py published`
+  quando il NAS è disponibile; la copia candidata era già stata verificata.
+
+## Stato storico: MESHing 3.0.7
 
 - **MESHing 3.0.7 è pubblicata come Latest**:
   https://github.com/leonardobandini/MESHing/releases/tag/v3.0.7

@@ -10,15 +10,17 @@ Percorso confermato: `\\satoshi.b2\csi\MESHing` (non la cartella FEMesh).
   Conservare eventuali altri documenti già presenti nelle cartelle.
 - Le versioni **candidate** stanno separatamente in
   `\\satoshi.b2\csi\MESHing\candidate\<versione>\` e possono essere
-  cancellate periodicamente dopo i test. La **3.0.15** è la candidata corrente:
+  cancellate periodicamente dopo i test. La **3.0.15**, ora pubblicata come Latest,
+  era stata archiviata come candidata:
   dialoghi Gmsh con z-order corretto e tracciati JSON distinti su più Genera
   nella stessa sessione; dieci asset verificati. SHA-256 installer/alias:
   `e269d9abd8f27e506ca31a881524d5f3453267a4aedada813e5937f1ac52aff5`;
   sorgenti: `d0ad617225a719c3ae08bd84af77a014aefa78771ec9bc2661babb55e5029947`.
   La 3.0.14 rimane una candidata precedente con minimo/default 8; la 3.0.12
   aumentava le 8 richieste a 16 sul modello 40 e non va usata per tale prova.
-- La release 3.0.15 **non è ancora pubblicata**. Quando verrà pubblicata,
-  archiviarne i sorgenti nella cartella permanente eseguendo di nuovo:
+- La release 3.0.15 è **pubblicata come Latest dal 5 novembre 2026**.
+  La sincronizzazione dell'archivio permanente tentata dopo la pubblicazione
+  non ha completato la verifica. Ripeterla quando il NAS è disponibile:
 
   ```text
   python tools/SyncMESHingNasArchives.py published

@@ -1,6 +1,6 @@
 # MESHing — changelog
 
-## MESHing 3.0.15 — candidata locale
+## MESHing 3.0.15 — pubblicata il 5 novembre 2026
 
 - Le finestre delle impostazioni Gmsh restano davanti a MESHing e SAP2000 anche quando MESHing non è TopMost. La correzione mantiene la finestra SAP2000 davanti alle altre applicazioni senza farla salire sopra il dialogo modale.
 - Il tracing facoltativo delle opzioni Gmsh conserva i JSON delle generazioni precedenti: se la stessa sessione genera di nuovo, usa un nome univoco invece di interrompersi perché `manifest-settings.json` esiste già. La sequenza manuale Show Tables/Excel/cambio modello in una sessione pulita ha completato il secondo Genera senza errore tabellare; il comportamento FAST non è stato alterato.
