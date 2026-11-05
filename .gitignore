@@ -18,6 +18,7 @@ venv/
 # IDE and user settings
 .vs/
 .vscode/
+/opencode.json
 *.user
 *.suo
 

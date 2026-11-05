@@ -38,7 +38,7 @@ foreach ($name in @('occt-7.8.1', 'fltk-1.3.11', 'med-4.1.0')) {
     Copy-Item -LiteralPath "third_party\native-sources\$name-source.tar.gz" -Destination "packaging\cache\$name-source.tar.gz"
 }
 powershell -NoProfile -ExecutionPolicy Bypass -File packaging\build-release-v2.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File packaging\PrepareV306Candidate.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File packaging\PrepareMESHingCandidate.ps1
 ```
 
 The release script compiles `SapQuadTransitionPlugin/SapGmshReplacement.csproj`
@@ -60,11 +60,11 @@ revision exposed by the unmodified official Gmsh wheel;
 neither the sources nor this script claim a bit-for-bit rebuild of that wheel.
 `-SkipBackendBuild` reuses a previously built frozen backend.
 
-`PrepareV306Candidate.ps1` stages ten release assets and checksums under
-`artifacts/candidate-v3.0.7/`, including a `MESHing-latest.zip` byte-identical
-to the versioned installer. Publishing 3.0.7 as Latest moves the public link
-and the in-plugin update feed to this release.
-The 3.0.7 help is generated before building the plug-in and packaging sources.
+`PrepareMESHingCandidate.ps1` stages ten local candidate assets and checksums under
+`artifacts/candidate-v3.0.15/` for the current project version, including a `MESHing-latest.zip` byte-identical
+to the versioned installer. Building and testing these assets does not publish
+them or move the public Latest link. The bilingual 3.0.15 help is included in
+the plugin build and the corresponding source archive.
 
 `PrepareV305Candidate.ps1` stages eight versioned binary/source assets and
 checksums under `artifacts/candidate-v3.0.5/`. This non-Latest release does not

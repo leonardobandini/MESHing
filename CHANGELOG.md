@@ -1,5 +1,45 @@
 # MESHing — changelog
 
+## MESHing 3.0.15 — candidata locale
+
+- Le finestre delle impostazioni Gmsh restano davanti a MESHing e SAP2000 anche quando MESHing non è TopMost. La correzione mantiene la finestra SAP2000 davanti alle altre applicazioni senza farla salire sopra il dialogo modale.
+- Il tracing facoltativo delle opzioni Gmsh conserva i JSON delle generazioni precedenti: se la stessa sessione genera di nuovo, usa un nome univoco invece di interrompersi perché `manifest-settings.json` esiste già. La sequenza manuale Show Tables/Excel/cambio modello in una sessione pulita ha completato il secondo Genera senza errore tabellare; il comportamento FAST non è stato alterato.
+
+## MESHing 3.0.14 — candidata locale per prova
+
+- Numero minimo di corde: valore predefinito 8, minimo consentito 8 in interfaccia e backend. Rimane invariata la larghezza O-grid predefinita di 0,5 diametri.
+
+## MESHing 3.0.13 — correzione locale per prova
+
+- Il numero minimo di corde è applicato alla circonferenza del foro e non al bordo esterno O-grid: sul modello 40, foro 20 mm, mesh massima 10 mm e larghezza 0,5 diametri, scegliere 8 produce effettivamente 8 corde. Un foro interno con minimo 12 può utilizzare esattamente 12 corde; nei casi di giunto o simmetria il conteggio può aumentare per allineare i tagli radiali ai bordi delle aree.
+- In caso di O-grid larga, i lati esterni del raccordo possono superare la dimensione nominale pur mantenendo il numero richiesto di corde sul foro.
+
+## MESHing 3.0.12 — candidata locale per prova
+
+- Default dei fori circolari: minimo 12 corde; ampiezza radiale dell'O-grid 0,5 diametri del foro. Il conteggio effettivo delle corde e degli strati radiali resta determinato dalla dimensione massima della mesh e dalla larghezza O-grid.
+
+## MESHing 3.0.11 — sviluppo locale
+
+- Default delle corde minime: 8. L'O-grid chiede la larghezza radiale in diametri del foro (default 1) anziché il numero degli strati.
+- La larghezza effettiva è limitata solo dalla geometria/da vincoli esistenti. Gli strati radiali sono calcolati come arrotondamento superiore della larghezza divisa per la corda effettiva; il numero delle corde può salire oltre il minimo quando necessario per contenere anche i lati esterni nella dimensione massima della mesh.
+
+## MESHing 3.0.10 — sviluppo locale
+
+- Diagnosi SVG sul modello Steel_Plate: con 8 corde/4 strati, il riposizionamento dei nodi durante la ricombinazione poteva spostare nodi all'interno del foro e produrre shell ripiegate, rifiutate dall'importazione tabellare SAP2000.
+- L'O-grid completa ha ora un bordo esterno circolare conforme al ritaglio; con O-grid attiva, il riposizionamento durante la ricombinazione è disattivato nelle opzioni effettive. L'ottimizzazione Laplace2D resta disponibile. Un controllo sulle shell O-grid rifiuta nodi nel foro, lati troppo corti ed elementi ripiegati prima dell'importazione.
+- Modello 40 su copia temporanea: mesh massima 10 mm, foro 20 mm, minimo 8 corde e 3 strati radiali: Genera e importazione FAST riuscite, 8 corde effettive; con mesh massima 6 mm le corde salgono a 16 e l'importazione FAST riesce.
+
+## MESHing 3.0.9 — sviluppo locale
+
+- Corretto il significato dell'opzione radiale O-grid: ora imposta il numero esatto di strati shell dal foro al bordo esterno (default 3, minimo 1), indipendentemente dal numero di corde.
+- Le corde del foro sono dimensionate rispetto alla circonferenza interna; l'eventuale limite della dimensione della mesh le aumenta solo se necessario. Il bordo esterno della transizione non forza più corde inutili sul foro.
+- Nelle opzioni aggiuntive tutti i controlli sono visibili senza scorrimento e il messaggio sulla simmetria è nero.
+
+## MESHing 3.0.8 — sviluppo locale precedente
+
+- Opzioni aggiuntive: numero minimo di corde per i fori circolari (intero ≥ 4) e numero minimo di elementi radiali lungo la circonferenza dell'O-Grid (intero ≥ 4).
+- I lati dei fori ordinari sono archi senza nodi intermedi; il numero effettivo cresce quando la dimensione massima della mesh richiede corde più corte. L'O-Grid mantiene i bordi e gli assi allineati e può aumentare il conteggio richiesto.
+
 ## MESHing 3.0.7
 
 - FAST non passa più silenziosamente all'inserimento Standard quando una tabella non è supportata: il preflight interrompe Genera prima di modificare il modello. Standard rimane una modalità esplicita per i test di compatibilità.

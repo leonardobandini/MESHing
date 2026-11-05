@@ -126,6 +126,12 @@ def validate_constraints(nodes, elements, interior, frames):
 def check_settings(settings, max_size):
     if not math.isfinite(max_size) or max_size <= 0:
         raise ValueError("Mesh size must be positive and finite")
+    value = settings.get("minimumHoleChords", 8)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 8:
+        raise ValueError("minimumHoleChords must be an integer >= 8")
+    width = settings.get("oGridWidthDiameters", .5)
+    if isinstance(width, bool) or not isinstance(width, (int, float)) or not math.isfinite(width) or width <= 0:
+        raise ValueError("oGridWidthDiameters must be positive and finite")
     if int(settings["algorithm"]) not in ALGORITHMS_2D:
         raise ValueError("Unsupported Gmsh 2D algorithm: " + str(settings["algorithm"]))
     if int(settings["recombination"]) not in range(4):
@@ -290,7 +296,8 @@ def inside_or_on_source_area(point, corners, tolerance=1e-8):
     return inside_source_area(point, corners)
 
 
-def make_ogrid_rings(geometry, geo, point_tag, max_size, allow_partial=False):
+def make_ogrid_rings(geometry, geo, point_tag, max_size, allow_partial=False,
+                     minimum_chords=8, width_diameters=.5):
     """Build conforming transfinite annular patches; keep SAP ownership per sector."""
     holes = {}
     for (corners, _, _, _, _, _, local_holes, _, _), _ in geometry:
@@ -332,13 +339,56 @@ def make_ogrid_rings(geometry, geo, point_tag, max_size, allow_partial=False):
                                     for axis in range(3)) / length_sq))
                 nearest = tuple(start[axis] + t * segment[axis] for axis in range(3))
                 clearances.append(math.dist(center, nearest) - radius)
-        width = min(radius * .8, max_size * 1.5, min(clearances, default=float('inf')) * .8)
+        # Respect free plate boundaries. A seam shared with another selected
+        # coplanar area is internal and must not limit the transition width.
+        for data, _ in geometry:
+            corners = data[0]
+            if not on_source_plane(center, corners):
+                continue
+            for edge in corners:
+                start, end = corners[edge], corners[edge % len(corners) + 1]
+                if any(other is not data and on_source_plane(center, other[0]) and
+                       any((math.dist(start, other[0][index]) < 1e-8 and
+                            math.dist(end, other[0][index % len(other[0]) + 1]) < 1e-8) or
+                           (math.dist(end, other[0][index]) < 1e-8 and
+                            math.dist(start, other[0][index % len(other[0]) + 1]) < 1e-8)
+                           for index in other[0]) for other, _ in geometry):
+                    continue
+                direction = tuple(end[i] - start[i] for i in range(3))
+                length_sq = sum(component * component for component in direction)
+                if length_sq == 0:
+                    continue
+                t = max(0, min(1, sum((center[i] - start[i]) * direction[i]
+                                      for i in range(3)) / length_sq))
+                nearest = tuple(start[i] + t * direction[i] for i in range(3))
+                distance = math.dist(center, nearest)
+                if distance > radius + 1e-8:
+                    clearances.append(distance - radius)
+        width = min(2 * radius * width_diameters, min(clearances, default=float('inf')) * .8)
         if width <= 1e-8:
             raise ValueError("Circular O-grid has insufficient radial clearance")
         outer = radius + width
-        ring_distances.append((center, radius, outer))
-        count = max(8, math.ceil(2 * math.pi * outer / max_size - 1e-9))
-        count = int(math.ceil(count / 8) * 8)
+        # Two shell chords per sector. Only the hole chords determine whether
+        # the requested minimum must grow: sizing from the outer O-grid circle
+        # silently doubles the hole's chords even when eight fit the mesh.
+        count = max(4, math.ceil(minimum_chords / 2))
+        # A hole wholly inside one area can have 12 chords (6 sectors). At a
+        # source-area seam or a symmetry axis the radial cuts must still hit
+        # every cardinal direction, so use a multiple of four sectors there.
+        cardinal = allow_partial or any(
+            on_source_plane(center, data[0]) and any(
+                abs(math.dist(data[0][edge], center) +
+                    math.dist(center, data[0][edge % len(data[0]) + 1]) -
+                    math.dist(data[0][edge], data[0][edge % len(data[0]) + 1])) < 1e-8
+                for edge in data[0]) for data, _ in geometry)
+        if cardinal:
+            count = int(math.ceil(count / 4) * 4)
+        while (2 * radius * math.sin(math.pi / (2 * count)) > max_size + 1e-12 or
+               outer * math.cos(math.pi / count) < radius * 1.2):
+            count += 4 if cardinal else 1
+        chord = 2 * radius * math.sin(math.pi / (2 * count))
+        radial_layers = max(1, math.ceil(width / chord - 1e-9))
+        ring_distances.append((center, radius, outer, radial_layers))
 
         def ring_point(distance, sector):
             angle = 2 * math.pi * sector / count
@@ -369,6 +419,9 @@ def make_ogrid_rings(geometry, geo, point_tag, max_size, allow_partial=False):
             if len(matching) != 1:
                 raise ValueError("O-grid sectors cross a SAP2000 area seam or plate boundary; align the radial sectors with the seams")
             active.append(matching[0])
+        # A full ring uses a circular outer seam. A straight outer chord would
+        # pinch a coarse O-grid against the true inner arc at its midpoint.
+        complete_ring = len(set(active)) == 1
         for index, (data, _) in enumerate(geometry):
             if not any(owner == index for owner in active):
                 continue
@@ -383,7 +436,7 @@ def make_ogrid_rings(geometry, geo, point_tag, max_size, allow_partial=False):
                 if math.dist(center, nearest) < outer - 1e-8:
                     raise ValueError("A selected SAP2000 frame crosses the O-grid transition ring")
             if all(owner == index for owner in active):
-                carve_areas[index].append(outer_points)
+                carve_areas[index].append(("disk", center, outer, normal))
             else:
                 starts = [sector for sector, owner in enumerate(active)
                           if owner == index and active[(sector - 1) % count] != index]
@@ -430,7 +483,10 @@ def make_ogrid_rings(geometry, geo, point_tag, max_size, allow_partial=False):
         boundary_in = [geo.addCircleArc(point_tag(inner[i]), point_tag(center),
                                         point_tag(inner[(i + 1) % count]), center=True)
                        for i in range(count)]
-        boundary_out = [geo.addLine(point_tag(outer_points[i]), point_tag(outer_points[(i + 1) % count]))
+        boundary_out = [geo.addCircleArc(point_tag(outer_points[i]), point_tag(center),
+                                         point_tag(outer_points[(i + 1) % count]), center=True)
+                        if complete_ring else
+                        geo.addLine(point_tag(outer_points[i]), point_tag(outer_points[(i + 1) % count]))
                         for i in range(count)]
         for sector, owner in enumerate(active):
             if owner is None:
@@ -442,6 +498,43 @@ def make_ogrid_rings(geometry, geo, point_tag, max_size, allow_partial=False):
             ring_areas[owner].append(face)
             ring_faces.add(face)
     return ring_areas, carve_areas, ring_faces, ring_distances, corner_notches
+
+
+def validate_ogrid_geometry(nodes, elements, holes, ring_distances, normal, max_size):
+    """Reject collapsed/inside-hole O-grid shells before SAP sees their tables."""
+    used = {tag for element in elements for tag in element}
+    for center, radius in holes:
+        outer = next((distance for hole, r, distance, _ in ring_distances
+                      if math.dist(hole, center) < 1e-8 and abs(r - radius) < 1e-8), None)
+        if outer is None:
+            continue
+        distances = {tag: math.dist(nodes[tag], center) for tag in used}
+        if any(distance < radius - max(1e-7, radius * 1e-6)
+               for distance in distances.values()):
+            raise ValueError("O-grid has shell nodes inside a circular opening; "
+                             "increase the minimum number of chords or reduce radial layers")
+        minimum_edge = max(1e-7, min(radius * .03, max_size * .02))
+        for element in elements:
+            if not all(distances[tag] < outer + 1e-7 for tag in element):
+                continue
+            short = [(first, second) for first, second in zip(element, element[1:] + element[:1])
+                     if math.dist(nodes[first], nodes[second]) < minimum_edge]
+            if short:
+                raise ValueError("O-grid has shell edges too short for SAP2000 near a circular opening; "
+                                 f"increase the minimum number of chords or reduce radial layers "
+                                 f"(edge={short[0]}, length={math.dist(nodes[short[0][0]], nodes[short[0][1]])})")
+            # The structured ring must be convex; a folded quad is rejected by SAP.
+            corners = [nodes[tag] for tag in element]
+            turns = []
+            for prev, point, following in zip(corners[-1:] + corners[:-1], corners,
+                                              corners[1:] + corners[:1]):
+                a = [point[i] - prev[i] for i in range(3)]
+                b = [following[i] - point[i] for i in range(3)]
+                turns.append(sum(normal[i] * (a[(i + 1) % 3] * b[(i + 2) % 3] -
+                                              a[(i + 2) % 3] * b[(i + 1) % 3]) for i in range(3)))
+            if min(turns) < -1e-12 and max(turns) > 1e-12:
+                raise ValueError("O-grid has folded shell elements near a circular opening; "
+                                 "increase the minimum number of chords or reduce radial layers")
 
 
 def reflect_elements_exactly(nodes, elements, corners, symmetry):
@@ -662,7 +755,8 @@ def mesh_areas(areas, max_size, settings):
             return point_tags[key]
 
         ring_areas, carve_areas, ring_faces, ring_distances, corner_notches = make_ogrid_rings(
-            geometry, geo, point_tag, max_size, bool(settings.get("exactSymmetry"))) if settings.get("oGrid") else (
+            geometry, geo, point_tag, max_size, bool(settings.get("exactSymmetry")),
+            settings.get("minimumHoleChords", 8), settings.get("oGridWidthDiameters", .5)) if settings.get("oGrid") else (
                 [[] for _ in geometry], [[] for _ in geometry], set(), [], {})
         # OCC boolean operations used by O-grid construction can consume point
         # entities. Recreate boundary tags instead of reusing stale cached IDs.
@@ -710,9 +804,13 @@ def mesh_areas(areas, max_size, settings):
             if carve_areas[index]:
                 cuts = []
                 for polygon in carve_areas[index]:
-                    boundary = [geo.addLine(point_tag(polygon[i]), point_tag(polygon[(i + 1) % len(polygon)]))
-                                for i in range(len(polygon))]
-                    cuts.append(geo.addPlaneSurface([geo.addWire(boundary)]))
+                    if isinstance(polygon, tuple) and polygon[0] == "disk":
+                        _, center, outer, normal = polygon
+                        cuts.append(geo.addDisk(*center, outer, outer, zAxis=normal))
+                    else:
+                        boundary = [geo.addLine(point_tag(polygon[i]), point_tag(polygon[(i + 1) % len(polygon)]))
+                                    for i in range(len(polygon))]
+                        cuts.append(geo.addPlaneSurface([geo.addWire(boundary)]))
                 remaining, _ = geo.cut([(2, face)], [(2, cut) for cut in cuts])
                 faces = [tag for dim, tag in remaining if dim == 2]
                 if not faces:
@@ -721,7 +819,25 @@ def mesh_areas(areas, max_size, settings):
                 normal = normal_of(corners)
                 magnitude = math.sqrt(sum(component * component for component in normal))
                 axis = [component / magnitude for component in normal]
-                disks = [geo.addDisk(*center, radius, radius, zAxis=axis) for center, radius in holes]
+                unit = tuple((corners[2][i] - corners[1][i]) / math.dist(corners[1], corners[2])
+                             for i in range(3))
+                side = (axis[1] * unit[2] - axis[2] * unit[1],
+                        axis[2] * unit[0] - axis[0] * unit[2],
+                        axis[0] * unit[1] - axis[1] * unit[0])
+                disks = []
+                for center, radius in holes:
+                    # One exact arc per chord: Gmsh must not insert a shell node
+                    # between its endpoints, including for large holes.
+                    count = max(4, settings.get("minimumHoleChords", 8),
+                                math.ceil(2 * math.pi * radius / max_size - 1e-9))
+                    count = int(math.ceil(count / 4) * 4)
+                    points = [point_tag(tuple(center[i] + radius *
+                              (math.cos(2 * math.pi * j / count) * unit[i] +
+                               math.sin(2 * math.pi * j / count) * side[i]) for i in range(3)))
+                              for j in range(count)]
+                    arcs = [geo.addCircleArc(points[j], point_tag(center), points[(j + 1) % count],
+                                             center=True) for j in range(count)]
+                    disks.append(geo.addPlaneSurface([geo.addWire(arcs)]))
                 remaining, _ = geo.cut([(2, face)], [(2, disk) for disk in disks])
                 faces = [tag for dim, tag in remaining if dim == 2]
                 if not faces:
@@ -888,6 +1004,8 @@ def mesh_areas(areas, max_size, settings):
         for name, value in settings.get("options", {}).items():
             if not name.startswith("Mesh.") or name in reserved:
                 raise ValueError("Unsupported or controlled Gmsh option: " + name)
+            if settings.get("oGrid") and name == "Mesh.RecombineNodeRepositioning":
+                value = 0  # Repositioning can fold transfinite O-grid shells into the hole.
             gmsh.option.setNumber(name, float(value))
         structured = settings.get("structured") or {}
         if structured.get("mode") == "automatic":
@@ -902,14 +1020,29 @@ def mesh_areas(areas, max_size, settings):
                 if len(curves) not in (3, 4):
                     raise ValueError("Manual transfinite requires 3- or 4-sided patches; partition the selected SAP2000/CSiBridge area first")
                 gmsh.model.mesh.setTransfiniteSurface(tag, structured.get("arrangement", "Left"))
+        if not settings.get("oGrid"):
+            # Boolean cuts and fragmentation can replace the original arc tags.
+            # Identify their surviving circular boundaries by their end points.
+            for _, curve in gmsh.model.getEntities(1):
+                endpoints = gmsh.model.getBoundary([(1, curve)], oriented=False)
+                if len(endpoints) != 2:
+                    continue
+                coordinates = [gmsh.model.getValue(0, tag, []) for _, tag in endpoints]
+                for data, _ in geometry:
+                    if any(all(abs(math.dist(point, center) - radius) < 1e-7
+                               for point in coordinates) and
+                           geo.getMass(1, curve) < radius * math.pi / 2 + 1e-7
+                           for center, radius in data[6]):
+                        gmsh.model.mesh.setTransfiniteCurve(curve, 2)
+                        break
         transition_curves = set()
         transition_size = max_size
         for surface in sorted(structured_ring_faces):
             if surface not in {face for faces in faces_by_area for face in faces}:
                 continue
             curves = gmsh.model.getBoundary([(2, surface)], oriented=False)
-            center, radius, outer = min(ring_distances,
-                                        key=lambda hole: math.dist(geo.getCenterOfMass(2, surface), hole[0]))
+            center, radius, outer, radial_layers = min(ring_distances,
+                                         key=lambda hole: math.dist(geo.getCenterOfMass(2, surface), hole[0]))
             threshold = (radius + outer) / 2
             outer_curves = []
             radial_pairs = []
@@ -938,7 +1071,7 @@ def mesh_areas(areas, max_size, settings):
             for inner, outer_tag in radial_pairs:
                 gmsh.model.mesh.setTransfiniteCurve(next(curve for _, curve in curves if
                     {tag for _, tag in gmsh.model.getBoundary([(1, curve)], oriented=False)} ==
-                    {inner, outer_tag}), 3)
+                    {inner, outer_tag}), radial_layers + 1)
             first, second = radial_pairs
             gmsh.model.mesh.setTransfiniteSurface(surface, cornerTags=[first[0], first[1],
                                                                          second[1], second[0]])
@@ -1009,6 +1142,7 @@ def mesh_areas(areas, max_size, settings):
                 elements = reflect_elements_exactly(nodes, elements, corners, symmetry)
             if settings.get("oGrid"):
                 elements = repair_sliver_triangles(nodes, elements, normal_of(corners), max_size, frames)
+                validate_ogrid_geometry(nodes, elements, holes, ring_distances, normal_of(corners), max_size)
             validate_sliver_triangles(nodes, elements, max_size)
             excluded = excluded_opening_points[area_index]
             validate_constraints(nodes, elements,

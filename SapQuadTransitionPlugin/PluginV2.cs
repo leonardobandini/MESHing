@@ -39,7 +39,7 @@ namespace SapQuadTransitionPlugin
         private const int AreaObjectType = 5;
         private const int SolidObjectType = 6;
         private const int LinkObjectType = 7;
-        private const string PluginVersion = "3.0.7";
+        private const string PluginVersion = "3.0.15";
         private const string WindowTitle = "MESHing " + PluginVersion;
         private const string UpdateManifestUrl = "https://api.github.com/repos/leonardobandini/MESHing/releases/latest";
         private const string LatestDownloadUrl = "https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip";
@@ -549,10 +549,12 @@ namespace SapQuadTransitionPlugin
                 uint hostPid;
                 if (GetWindowThreadProcessId(hostWindow, out hostPid) == 0 ||
                     hostPid != (uint)Process.GetCurrentProcess().Id) return;
-                // Keep the host in the normal window band, without activating it.
-                if (!SetWindowPos(hostWindow, IntPtr.Zero, 0, 0, 0, 0,
+                // Keep SAP directly behind the owning MESHing window. HWND_TOP
+                // alone raises SAP over both modal settings and plugin whenever
+                // neither is TopMost; do not undo the established owner chain.
+                if (!SetWindowPos(hostWindow, parent.Handle, 0, 0, 0, 0,
                     0x0001 | 0x0002 | 0x0010 | 0x0200)) // NOSIZE, NOMOVE, NOACTIVATE, NOOWNERZORDER
-                    LogPluginException(new InvalidOperationException("Cannot order the host below MESHing: " +
+                    LogPluginException(new InvalidOperationException("Cannot order the host behind MESHing: " +
                         Marshal.GetLastWin32Error()));
             };
             // In standalone UI tests the plugin form itself can be the process
@@ -4009,8 +4011,14 @@ namespace SapQuadTransitionPlugin
             string settingsTrace = Environment.GetEnvironmentVariable("SAP_GMSH_V2_SETTINGS_TRACE_DIR");
             if (!string.IsNullOrEmpty(settingsTrace) && Directory.Exists(settingsTrace))
             {
-                File.Copy(settingsPath, Path.Combine(settingsTrace, Path.GetFileNameWithoutExtension(boundary) + "-settings.json"));
-                File.WriteAllText(Path.Combine(settingsTrace, Path.GetFileNameWithoutExtension(boundary) + "-invocation.json"),
+                string stem = Path.GetFileNameWithoutExtension(boundary);
+                if (File.Exists(Path.Combine(settingsTrace, stem + "-settings.json")) ||
+                    File.Exists(Path.Combine(settingsTrace, stem + "-invocation.json")))
+                    stem += "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+                // Keep the first run's trace when Generate is repeated in the
+                // same SAP session (including an inherited test trace path).
+                File.Copy(settingsPath, Path.Combine(settingsTrace, stem + "-settings.json"));
+                File.WriteAllText(Path.Combine(settingsTrace, stem + "-invocation.json"),
                     new JavaScriptSerializer().Serialize(new { script = scriptName, maxSize = maxSize,
                         settings = Path.GetFileName(settingsPath) }), Encoding.UTF8);
             }
@@ -4553,7 +4561,12 @@ namespace SapQuadTransitionPlugin
                 "applying FAST tables", "DatabaseTables.ApplyEditedTables");
             progress.ThrowIfCancellationRequested();
             if (fatal != 0 || errors != 0 || warnings != 0)
+            {
+                string trace = Environment.GetEnvironmentVariable("SAP_QUAD_FAST_IMPORT_LOG_PATH");
+                if (!string.IsNullOrEmpty(trace) && Directory.Exists(Path.GetDirectoryName(trace)))
+                    File.WriteAllText(trace, importLog ?? "");
                 throw new InvalidOperationException("Invalid FAST import: " + ImportSummary(fatal, errors, warnings, importLog));
+            }
             RecordFastPhase("batch-apply-tables", clock);
 
             EditableTable resultingJoints = ReadEditableTable(model, "Joint Coordinates");
@@ -7952,6 +7965,10 @@ namespace SapQuadTransitionPlugin
             private readonly ComboBox holeGroup = new ComboBox();
             private readonly Label holeDiameterLabel = new Label();
             private readonly TextBox holeDiameter = new TextBox();
+            private readonly Label minimumHoleChordsLabel = new Label();
+            private readonly NumericUpDown minimumHoleChords = new NumericUpDown();
+            private readonly Label oGridWidthDiametersLabel = new Label();
+            private readonly NumericUpDown oGridWidthDiameters = new NumericUpDown();
             private readonly ToolTip measurementToolTip = new ToolTip();
             private readonly CheckBox preferRegular = new CheckBox();
             private readonly CheckBox stressRefinement = new CheckBox();
@@ -8040,8 +8057,24 @@ namespace SapQuadTransitionPlugin
                         }
                     }
                     gmshPreviewOptions.ApplyOptions(options);
+                    if (gmshOGrid.Checked && options.ContainsKey("Mesh.RecombineNodeRepositioning"))
+                        options["Mesh.RecombineNodeRepositioning"] = 0;
                     if (gmshOGrid.Checked && (!GenerateCircularHoles || HoleGroup == null))
                         throw new InvalidOperationException("Choose a circular-hole point group before enabling the O-grid.");
+                    int chords = (int)minimumHoleChords.Value;
+                    decimal widthDiameters = oGridWidthDiameters.Value;
+                    if (GenerateCircularHoles && (!int.TryParse(minimumHoleChords.Text, NumberStyles.None,
+                            CultureInfo.InvariantCulture, out chords) || chords < 8 || chords > minimumHoleChords.Maximum))
+                        throw new InvalidOperationException(L("Minimum number of chords must be an integer >= 8.",
+                            "Il numero minimo di corde deve essere un intero >= 8."));
+                    if (gmshOGrid.Checked &&
+                        (!(decimal.TryParse(oGridWidthDiameters.Text, NumberStyles.AllowDecimalPoint,
+                            CultureInfo.CurrentCulture, out widthDiameters) ||
+                           decimal.TryParse(oGridWidthDiameters.Text, NumberStyles.AllowDecimalPoint,
+                            CultureInfo.InvariantCulture, out widthDiameters)) ||
+                         widthDiameters < oGridWidthDiameters.Minimum || widthDiameters > oGridWidthDiameters.Maximum))
+                        throw new InvalidOperationException(L("O-grid width in hole diameters must be positive.",
+                            "La larghezza O-grid in diametri del foro deve essere positiva."));
                     var settings = new {
                         algorithm = gmshPreviewOptions.AlgorithmValue,
                         recombine = gmshPreviewOptions.RecombineValue,
@@ -8053,6 +8086,8 @@ namespace SapQuadTransitionPlugin
                         qualityTolerancePercent = 20,
                         preserveSelectedEdges = gmshPreserveSelectedEdges.Checked,
                         oGrid = gmshOGrid.Checked,
+                        minimumHoleChords = chords,
+                        oGridWidthDiameters = (double)widthDiameters,
                         exactSymmetry = symmetric.Checked,
                         structured = new { mode = gmshPreviewOptions.RegularGridValue ? "automatic" : "unstructured",
                             nodes = 5, distribution = "Progression",
@@ -9318,9 +9353,8 @@ namespace SapQuadTransitionPlugin
                 gmshPreviewOptions.SettingsChanged += delegate { UpdateGmshPreview(); };
                 gmshPreviewEmptyTab.Controls.Add(gmshPreviewOptions.Content);
 
-                gmshHolesTab.AutoScroll = true;
-                // Keep every additional control inside the normal tab viewport.
-                // The scrollbar remains available if display scaling reduces it.
+                // Keep the last group selector inside the tab viewport at normal DPI.
+                gmshHolesTab.AutoScroll = false;
                 gmshHolesTab.Controls.Add(gmshPreviewOptions.RegularGrid);
                 gmshPreviewOptions.RegularGrid.SetBounds(12, 6, 494, 23);
                 gmshHolesTab.Controls.Add(gmshPreserveSelectedEdges);
@@ -9337,12 +9371,19 @@ namespace SapQuadTransitionPlugin
                 gmshHolesTab.Controls.Add(holeGroup); holeGroup.SetBounds(222, 179, 284, 23);
                 gmshHolesTab.Controls.Add(holeDiameterLabel); holeDiameterLabel.SetBounds(40, 206, 245, 23);
                 gmshHolesTab.Controls.Add(holeDiameter); holeDiameter.SetBounds(396, 206, 110, 23);
+                minimumHoleChords.Minimum = 8; minimumHoleChords.Maximum = 10000; minimumHoleChords.Value = 8;
+                gmshHolesTab.Controls.Add(minimumHoleChordsLabel); minimumHoleChordsLabel.SetBounds(40, 235, 350, 23);
+                gmshHolesTab.Controls.Add(minimumHoleChords); minimumHoleChords.SetBounds(396, 235, 110, 23);
                 gmshHolesTab.Controls.Add(gmshOGrid);
                 gmshOGrid.FlatStyle = FlatStyle.Standard;
-                gmshOGrid.SetBounds(40, 235, 466, 23);
-                gmshHolesTab.Controls.Add(generateHoles); generateHoles.SetBounds(12, 272, 494, 40);
-                gmshHolesTab.Controls.Add(openingGroupLabel); openingGroupLabel.SetBounds(40, 320, 178, 23);
-                gmshHolesTab.Controls.Add(openingGroup); openingGroup.SetBounds(222, 320, 284, 23);
+                gmshOGrid.SetBounds(40, 264, 466, 23);
+                oGridWidthDiameters.DecimalPlaces = 2; oGridWidthDiameters.Minimum = .01m;
+                oGridWidthDiameters.Maximum = 1000; oGridWidthDiameters.Increment = .25m; oGridWidthDiameters.Value = .5m;
+                gmshHolesTab.Controls.Add(oGridWidthDiametersLabel); oGridWidthDiametersLabel.SetBounds(40, 293, 350, 23);
+                gmshHolesTab.Controls.Add(oGridWidthDiameters); oGridWidthDiameters.SetBounds(396, 293, 110, 23);
+                gmshHolesTab.Controls.Add(generateHoles); generateHoles.SetBounds(12, 320, 494, 32);
+                gmshHolesTab.Controls.Add(openingGroupLabel); openingGroupLabel.SetBounds(40, 356, 178, 23);
+                gmshHolesTab.Controls.Add(openingGroup); openingGroup.SetBounds(222, 356, 284, 23);
                 foreach (Control control in gmshHolesTab.Controls)
                     if (control.Right > 482) control.Width = 482 - control.Left;
 
@@ -9375,7 +9416,9 @@ namespace SapQuadTransitionPlugin
                     commands[index].SetBounds(20 + index * 135, 664, 125, 32);
                 Controls.Add(gmshResetDefault);
 
-                gmshOGrid.CheckedChanged += delegate { UpdateGmshPreview(); };
+                gmshOGrid.CheckedChanged += delegate { UpdateOptionState(); UpdateGmshPreview(); };
+                minimumHoleChords.ValueChanged += delegate { UpdateGmshPreview(); };
+                oGridWidthDiameters.ValueChanged += delegate { UpdateGmshPreview(); };
                 gmshPreserveSelectedEdges.CheckedChanged += delegate { UpdateGmshPreview(); };
                 gmshExtra.TextChanged += delegate { UpdateGmshPreview(); };
                 symmetric.CheckedChanged += delegate { UpdateGmshPreview(); };
@@ -9416,6 +9459,8 @@ namespace SapQuadTransitionPlugin
                 if (holeGroup.Items.Count > 0) holeGroup.SelectedIndex = 0;
                 if (openingGroup.Items.Count > 0) openingGroup.SelectedIndex = 0;
                 holeDiameter.Text = DefaultLength(0.05, units);
+                minimumHoleChords.Value = 8;
+                oGridWidthDiameters.Value = .5m;
                 if (hasSymmetryAxes) symmetryAxis.SelectedIndex = 0;
                 profiles.SelectedIndex = 2;
                 preferRegular.Checked = false;
@@ -9454,8 +9499,19 @@ namespace SapQuadTransitionPlugin
                     "Crea fori circolari ai nodi SAP2000 del gruppo");
                 holeGroupLabel.Text = L("Group", "Gruppo");
                 holeDiameterLabel.Text = L("Diameter (" + units + ")", "Diametro (" + units + ")");
+                minimumHoleChordsLabel.Text = L("Minimum number of chords", "Numero minimo di corde");
+                oGridWidthDiametersLabel.Text = L("O-grid width (hole diameters)", "Larghezza O-grid (diametri del foro)");
+                measurementToolTip.SetToolTip(minimumHoleChords, L(
+                    "At least this many shell edges around each hole. Smaller mesh sizes can require more edges; no nodes are added inside an edge.",
+                    "Almeno questo numero di lati shell attorno a ciascun foro. Mesh più piccole possono richiedere più lati; non si aggiungono nodi all'interno di un lato."));
+                measurementToolTip.SetToolTip(oGridWidthDiameters, L(
+                    "Radial O-grid width measured outward from the hole edge. Radial shell layers are calculated from the actual hole chord length. Nearby constraints can limit this width.",
+                    "Larghezza radiale dal bordo del foro, in diametri. Gli strati shell sono calcolati dalla corda effettiva. Vincoli vicini possono ridurre la larghezza."));
                 gmshOGrid.Text = L("Generate a structured O-Grid mesh",
                     "O-grid strutturata attorno ai fori circolari (quad radiali)");
+                measurementToolTip.SetToolTip(gmshOGrid, L(
+                    "Keep radial shell layers structured. Recombination node repositioning is disabled while O-grid is active to avoid folding elements into the hole.",
+                    "Mantiene strutturati gli strati radiali. Il riposizionamento dei nodi nella ricombinazione è disattivato con l'O-grid per evitare elementi ripiegati nel foro."));
                 generateHoles.Text = L("Create openings around the following group of frames and/or shells edges",
                     "Ritaglia aperture delimitate da frame o spigoli del gruppo");
                 openingGroupLabel.Text = L("Group", "Gruppo");
@@ -9484,7 +9540,7 @@ namespace SapQuadTransitionPlugin
                             "* Nessun asse di simmetria esiste per la selezione corrente")
                         : L("Select one or two perpendicular symmetry axes.",
                             "Scegliere uno o due assi di simmetria ortogonali.");
-                gmshSymmetryHint.ForeColor = hasSymmetryAxes || !hasSelectedAreas ? UiMuted : Color.FromArgb(185, 28, 28);
+                gmshSymmetryHint.ForeColor = Color.Black;
             }
 
             private void ConfigureSelectionSummary()
@@ -9734,6 +9790,24 @@ namespace SapQuadTransitionPlugin
                 }
                 if (Environment.GetEnvironmentVariable("SAP_GMSH_V2_ATOMIC_OGRID") == "1")
                     gmshOGrid.Checked = true;
+                string chordText = Environment.GetEnvironmentVariable("SAP_GMSH_V2_ATOMIC_MINIMUM_CHORDS");
+                int chordValue;
+                if (!string.IsNullOrEmpty(chordText))
+                {
+                    if (!int.TryParse(chordText, NumberStyles.None, CultureInfo.InvariantCulture, out chordValue) ||
+                        chordValue < minimumHoleChords.Minimum || chordValue > minimumHoleChords.Maximum)
+                        throw new InvalidOperationException("Invalid automated minimum hole chords.");
+                    minimumHoleChords.Value = chordValue;
+                }
+                string widthText = Environment.GetEnvironmentVariable("SAP_GMSH_V2_ATOMIC_WIDTH_DIAMETERS");
+                decimal widthValue;
+                if (!string.IsNullOrEmpty(widthText))
+                {
+                    if (!decimal.TryParse(widthText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out widthValue) ||
+                        widthValue < oGridWidthDiameters.Minimum || widthValue > oGridWidthDiameters.Maximum)
+                        throw new InvalidOperationException("Invalid automated O-grid width in diameters.");
+                    oGridWidthDiameters.Value = widthValue;
+                }
                 if (Environment.GetEnvironmentVariable("SAP_GMSH_V2_ATOMIC_QUAD_QS") == "1")
                     gmshPreviewOptions.Optimizer.SelectedIndex = 2;
                 if (Environment.GetEnvironmentVariable("SAP_GMSH_V2_ATOMIC_REGULAR_GRID") == "1")
@@ -9889,7 +9963,8 @@ namespace SapQuadTransitionPlugin
             }
             private void UpdateOptionState()
             {
-                generateCircularHoles.Visible = holeGroupLabel.Visible = holeGroup.Visible = holeDiameterLabel.Visible = holeDiameter.Visible = true;
+                generateCircularHoles.Visible = holeGroupLabel.Visible = holeGroup.Visible = holeDiameterLabel.Visible = holeDiameter.Visible =
+                    minimumHoleChordsLabel.Visible = minimumHoleChords.Visible = true;
                 preferRegular.Visible = stressRefinement.Visible = false;
                 UpdateSymmetryHint();
                 if (working) return;
@@ -9899,6 +9974,8 @@ namespace SapQuadTransitionPlugin
                     generateHoles.Enabled = generateCircularHoles.Enabled = true;
                     openingGroup.Enabled = generateHoles.Checked && openingGroup.Items.Count > 0;
                     gmshOGrid.Enabled = generateCircularHoles.Checked;
+                    oGridWidthDiameters.Enabled = generateCircularHoles.Checked && gmshOGrid.Checked;
+                    minimumHoleChords.Enabled = generateCircularHoles.Checked;
                     holeGroup.Enabled = generateCircularHoles.Checked && holeGroup.Items.Count > 0;
                     holeDiameter.Enabled = generateCircularHoles.Checked;
                     preferRegular.Enabled = stressRefinement.Enabled = structuredSectorBands.Enabled = false;
@@ -9918,6 +9995,8 @@ namespace SapQuadTransitionPlugin
                 // an explicit missing-group message instead of changing intent.
                 generateHoles.Enabled = true;
                 gmshOGrid.Enabled = generateCircularHoles.Checked;
+                oGridWidthDiameters.Enabled = generateCircularHoles.Checked && gmshOGrid.Checked;
+                minimumHoleChords.Enabled = generateCircularHoles.Checked;
                 openingGroup.Enabled = generateHoles.Checked && openingGroup.Items.Count > 0;
                 generateCircularHoles.Enabled = true;
                 holeGroup.Enabled = generateCircularHoles.Checked && holeGroup.Items.Count > 0;

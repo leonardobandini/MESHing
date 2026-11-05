@@ -11,11 +11,96 @@ import unittest
 from unittest.mock import patch
 
 from sap_gmsh_mesher import (check_settings, main, mesh_areas, read_boundary,
-                             repair_sliver_triangles, triangle_shape, validate_constraints,
-                             validate_sliver_triangles)
+                              repair_sliver_triangles, triangle_shape, validate_constraints,
+                              validate_ogrid_geometry, validate_sliver_triangles)
 
 
 class GmshV2Tests(unittest.TestCase):
+    def test_custom_hole_chords_and_ogrid_width(self):
+        with tempfile.TemporaryDirectory() as directory:
+            boundary = os.path.join(directory, 'hole.csv')
+            output = os.path.join(directory, 'mesh.csv')
+            with open(boundary, 'w', newline='') as stream:
+                writer = csv.writer(stream)
+                writer.writerow(('AREA', 'A1', 'Shell'))
+                for index, point in enumerate(((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)), 1):
+                    writer.writerow(('CORNER', index, str(index), 0, *point))
+                writer.writerow(('HOLE', 1, '', .24, .5, .5, 0))
+            base = dict(algorithm=8, recombine=True, recombination=0,
+                        smoothing=1, optimize=False, options={})
+            for invalid in (3, 4, 6, 7, 8.5, '8', True):
+                with self.subTest(invalid=invalid):
+                    with self.assertRaisesRegex(ValueError, 'integer >= 8'):
+                        check_settings(dict(base, minimumHoleChords=invalid), .2)
+            for invalid in (0, -1, float('nan'), float('inf'), '8', True):
+                with self.subTest(invalid_width=invalid):
+                    with self.assertRaisesRegex(ValueError, 'positive and finite'):
+                        check_settings(dict(base, oGridWidthDiameters=invalid), .2)
+            for ogrid, chords, width, size, expected in (
+                    (False, 28, 1, .2, 28),
+                    (False, 8, 1, .05, 16),
+                    (True, 28, 1, .2, 28),
+                    (True, 8, 1, .06, 14)):
+                with self.subTest(ogrid=ogrid, chords=chords, size=size):
+                    mesh_areas([(boundary, output)], size,
+                               dict(base, oGrid=ogrid, minimumHoleChords=chords, oGridWidthDiameters=width))
+                    with open(output, newline='') as stream:
+                        rows = list(csv.reader(stream))
+                    nodes = {int(row[1]): tuple(map(float, row[2:])) for row in rows if row[0] == 'N'}
+                    elements = [tuple(map(int, row[1:])) for row in rows if row[0] == 'E']
+                    hole_nodes = {tag for element in elements for tag in element
+                                  if abs(math.dist(nodes[tag][:2], (.5, .5)) - .12) < 1e-7}
+                    self.assertEqual(len(hole_nodes), expected)
+                    hole_edges = {tuple(sorted((a, b))) for element in elements
+                                  for a, b in zip(element, element[1:] + element[:1])
+                                  if a in hole_nodes and b in hole_nodes}
+                    self.assertEqual(len(hole_edges), expected)
+
+    def test_ogrid_width_in_diameters_sizes_radial_layers_from_actual_chord(self):
+        with tempfile.TemporaryDirectory() as directory:
+            boundary = os.path.join(directory, 'steel.csv')
+            output = os.path.join(directory, 'mesh.csv')
+            with open(boundary, 'w', newline='') as stream:
+                writer = csv.writer(stream)
+                writer.writerow(('AREA', 'A1', 'Shell'))
+                for index, point in enumerate(((0, 0, 0), (.1, 0, 0), (.1, .1, 0), (0, .1, 0)), 1):
+                    writer.writerow(('CORNER', index, str(index), 0, *point))
+                writer.writerow(('HOLE', 1, '', .02, .05, .05, 0))
+            for width, chords, expected_chords, expected_layers in (
+                    (.5, 8, 8, 2), (1, 8, 8, 3), (.5, 12, 12, 2)):
+                with self.subTest(width_diameters=width, minimum_chords=chords):
+                    mesh_areas([(boundary, output)], .01,
+                               dict(algorithm=8, recombine=True, recombination=0, smoothing=1,
+                                    optimize=True, optimizeMethod='Laplace2D', optimizeIterations=1,
+                                    options={'Mesh.RecombineNodeRepositioning': 1}, oGrid=True,
+                                    minimumHoleChords=chords, oGridWidthDiameters=width))
+                    with open(output, newline='') as stream:
+                        rows = list(csv.reader(stream))
+                    nodes = {int(row[1]): tuple(map(float, row[2:])) for row in rows if row[0] == 'N'}
+                    elements = [tuple(map(int, row[1:])) for row in rows if row[0] == 'E']
+                    on_hole = {tag for element in elements for tag in element
+                               if abs(math.dist(nodes[tag][:2], (.05, .05)) - .01) < 1e-7}
+                    self.assertEqual(len(on_hole), expected_chords)
+                    self.assertTrue(all(math.dist(nodes[tag][:2], (.05, .05)) >= .01 - 1e-7
+                                        for element in elements for tag in element))
+                    outer_x = .06 + .02 * width
+                    radial_stations = {round(nodes[tag][0], 8) for element in elements for tag in element
+                                       if abs(nodes[tag][1] - .05) < 1e-8 and
+                                       .06 - 1e-8 <= nodes[tag][0] <= outer_x + 1e-8}
+                    self.assertEqual(len(radial_stations), expected_layers + 1)
+
+    def test_invalid_ogrid_geometry_fails_before_sap_import(self):
+        center = (.05, .05, 0.)
+        hole = [(center, .01)]
+        ring = [(center, .01, .018, 3)]
+        nodes = {1: (.06, .05, 0.), 2: (.06, .06, 0.),
+                 3: (.05, .06, 0.), 4: (.05, .05, 0.)}
+        with self.assertRaisesRegex(ValueError, 'inside a circular opening'):
+            validate_ogrid_geometry(nodes, [(1, 2, 3, 4)], hole, ring, (0, 0, 1), .01)
+        nodes[4] = (.05001, .06001, 0.)
+        with self.assertRaisesRegex(ValueError, 'too short for SAP2000'):
+            validate_ogrid_geometry(nodes, [(1, 2, 3, 4)], hole, ring, (0, 0, 1), .01)
+
     def test_meshadapt_allows_zero_refinement_steps(self):
         with tempfile.TemporaryDirectory() as directory:
             boundary = os.path.join(directory, 'patch.csv')
@@ -339,7 +424,8 @@ class GmshV2Tests(unittest.TestCase):
                            if triangle_shape(nodes, triangle)[0] < 5 and
                            triangle_shape(nodes, triangle)[1] < .001]
                 self.assertFalse(slivers, slivers[:3])
-            self.assertGreater(baseline_slivers, 0)
+            # The curved outer seam also removes the old uniform-field slivers.
+            self.assertEqual(baseline_slivers, 0)
 
     def test_preview_settings_reach_gmsh_with_optional_optimizer(self):
         fixed = {"Mesh.MeshSizeFactor": 1, "Mesh.MeshSizeFromPoints": 0,
@@ -537,17 +623,16 @@ class GmshV2Tests(unittest.TestCase):
             nodes = {int(row[1]): tuple(map(float, row[2:])) for row in rows if row[0] == 'N'}
             elements = [tuple(map(int, row[1:])) for row in rows if row[0] == 'E']
             self.assertTrue(elements)
-            ring = [element for element in elements if all(
-                .12 * math.cos(math.pi / 24) - 1e-7 <= math.dist(nodes[tag][:2], (.5, .5)) <= .216 + 1e-7
-                for tag in element)]
-            self.assertGreaterEqual(len(ring), 32)
+            ring = [element for element in elements if any(
+                abs(math.dist(nodes[tag][:2], (.5, .5)) - .12) < 1e-7 for tag in element)]
+            self.assertEqual(len(ring), 10)
             self.assertTrue(all(len(element) == 4 for element in ring))
             self.assertTrue(any(len(element) == 4 and any(
                 abs(math.dist(nodes[tag][:2], (.5, .5)) - .12) < 1e-7 for tag in element)
                 for element in ring))
             hole_boundary = {tag for element in elements for tag in element
-                             if math.dist(nodes[tag][:2], (.5, .5)) < .15}
-            self.assertGreaterEqual(len(hole_boundary), 16)
+                             if abs(math.dist(nodes[tag][:2], (.5, .5)) - .12) < 1e-7}
+            self.assertEqual(len(hole_boundary), 10)
             self.assertTrue(all(abs(math.dist(nodes[tag][:2], (.5, .5)) - .12) < 1e-7
                                 for tag in hole_boundary))
 

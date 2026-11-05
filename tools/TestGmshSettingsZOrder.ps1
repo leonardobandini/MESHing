@@ -1,5 +1,6 @@
 # Exercise both settings dialogs with the same TopMost parent used by SAP2000.
-param([Parameter(Mandatory=$true)][string]$PluginPath)
+param([Parameter(Mandatory=$true)][string]$PluginPath,
+      [switch]$NonTopMost, [switch]$OwnedByHost)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -Path 'C:\Program Files\Computers and Structures\SAP2000 27\CSiAPIv1.dll'
@@ -36,7 +37,7 @@ try {
     $activeDialog = $assembly.GetType('SapQuadTransitionPlugin.cPlugin').GetField(
         'interactiveDialog', [Reflection.BindingFlags]'Static,NonPublic')
     $activeDialog.SetValue($null, $parent)
-    $parent.TopMost = $true
+    $parent.TopMost = -not $NonTopMost
     $parent.ShowInTaskbar = $true
     $panel = $type.GetField('gmshPreviewOptions', [Reflection.BindingFlags]'Instance,NonPublic').GetValue($parent)
     $panelType = $panel.GetType()
@@ -48,7 +49,8 @@ try {
         try {
             $child = @([Windows.Forms.Application]::OpenForms | Where-Object { $_ -ne $parent -and $_.Owner -eq $parent }) | Select-Object -First 1
             if ($child) {
-                if (-not $child.Visible -or -not $child.TopMost -or -not $child.Modal -or
+                if (-not $script:shownSince) { $script:shownSince = [DateTime]::UtcNow }
+                if (-not $child.Visible -or $child.TopMost -ne $parent.TopMost -or -not $child.Modal -or
                     [WindowState]::IsWindowEnabled($parent.Handle) -or
                     [WindowState]::IsWindowEnabled($hostWindow.Handle)) {
                     throw "Settings window not visible, topmost, and modal with disabled parent and host: $($child.Text)"
@@ -67,9 +69,13 @@ try {
                     $hostIndex -le $parentIndex -or $browserIndex -le $hostIndex) {
                     throw "Incorrect window order: settings=$childIndex plugin=$parentIndex host=$hostIndex other=$browserIndex"
                 }
+                # The reported regression occurs after the settings have been
+                # visible for about a second, not just during Shown.
+                if (([DateTime]::UtcNow - $script:shownSince).TotalMilliseconds -lt 1400) { return }
                 $script:checks++
                 $child.DialogResult = if ($script:step -eq 1) { [Windows.Forms.DialogResult]::Cancel } else { [Windows.Forms.DialogResult]::OK }
                 $child.Close()
+                $script:shownSince = $null
                 $script:step++
             } elseif ($script:step -eq 0) {
                 $algorithm.SelectedIndex = 0 # MeshAdapt
@@ -96,7 +102,8 @@ try {
         }
     })
     $timer.Start()
-    $parent.Show()
+    if ($OwnedByHost) { $parent.Show($hostWindow) }
+    else { $parent.Show() }
     $deadline = [Diagnostics.Stopwatch]::StartNew()
     while ($parent.Visible -and $deadline.Elapsed.TotalSeconds -lt 30) {
         [Windows.Forms.Application]::DoEvents()
