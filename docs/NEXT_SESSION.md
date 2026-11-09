@@ -221,3 +221,58 @@ stato corrente di Git/GitHub prima di agire, perché può essere cambiato.
   `SAP2000 27/NativeAPI/x64/CSiAPIv1.tlb`, senza modificare i sorgenti gemelli.
   Riavviare OpenCode prima di aspettarsi i tool MCP nella sessione: la
   configurazione non viene ricaricata a caldo.
+
+## Candidata locale MESHing 3.0.18 (9 novembre 2026)
+
+- Le diagnostiche prima di Genera (aree non complanari e nodi vicini) sono
+  riunite in un'unica opzione nella terza scheda **General options / Opzioni
+  generali**, inizialmente attiva. La percentuale sui nodi e' configurabile,
+  default 5% del passo massimo, e viene ricordata. La seconda scheda si chiama
+  **Additional meshing options / Opzioni aggiuntive di meshatura**.
+  Disattivare la diagnostica non disattiva il controllo Gmsh dei triangoli
+  quasi allineati, ancora obbligatorio prima di FAST. Help IT/EN e screenshot
+  della nuova scheda aggiornati.
+- Pacchetto locale `artifacts/candidate-v3.0.18/` con dieci asset e checksum:
+  ZIP installabile e alias Latest identici, SHA-256
+  `5b3da022d6e1b255e6c0bb7acbd2bda243d8720210c13709b237782451294b9c`.
+  Sorgenti ZIP SHA-256
+  `609b1037005587695edf8c630f925fe8fa52eb8ed8155dee971bc8a0cf6e92cb`.
+  La candidata **non e' pubblicata** e non sostituisce il tag pubblico.
+- Candidata installata localmente dallo ZIP versionato e verificata contro
+  DLL, backend binario/script, help e registrazione COM. Il backend installato
+  dichiara 3.0.18. Copia di rollback 3.0.17 in
+  `%TEMP%\opencode\meshing-before-3.0.18-fa3598e976d74133a91ac9d7e443e643`.
+- Check eseguiti: 36 test Python PASS, 1 skip; test UI delle opzioni default
+  on/5%, persistenza off/12,5%, ripristino default PASS; help IT/EN PASS;
+  backend congelato del pacchetto respinge il triangolo quasi allineato
+  Cernavoda **prima** di FAST; installer verify e prove di installazione
+  temporanea del pacchetto PASS. L'utente eseguira' le prove interattive
+  con diagnostica attiva/disattiva prima di decidere sulla pubblicazione.
+
+## Regressione sei host della 3.0.18 (9 novembre 2026)
+
+- Eseguita la matrice completa sulla DLL del pacchetto con **tre SAP2000 e tre
+  CSiBridge simultanei**: 36/36 Genera/Applica per ciascun prodotto, 72/72
+  PASS. 34 FAST con commit diretto e due Standard espliciti per prodotto.
+  Seconda verifica -VerifyOnly PASS. Undo mirato in sei nuove istanze
+  simultanee, un caso per ciascuna delle tre sessioni di ogni prodotto:
+  **SAP 3/3 + Bridge 3/3 PASS** (`nTEST001`, `013`, `025`).
+- Sulla copia diagnostica di Cernavoda, diagnostica attiva e disattiva
+  hanno entrambe bloccato il triangolo quasi allineato prima di FAST,
+  come atteso. La mesh di quel modello non e' stata importata.
+- Risultati, limitazioni e percorsi delle tracce in
+  `docs/MESHING_3_0_18_REGRESSION_LOCAL.md`. La candidata e' ancora **solo
+  locale e non pubblicata**; attendere istruzioni dell'utente per il rilascio.
+
+## Preparazione rilascio 3.0.18 (9 novembre 2026)
+
+- L'utente ha chiesto di pubblicare la nuova release. I 36/36 SAP e 36/36
+  Bridge sopra si riferiscono al primo ZIP (SHA-256 `5b3da022...`). La
+  candidata attuale e' stata ricostruita: installer/alias SHA-256
+  `31df249ae82e5f2527285a6eee82b581e3cba30fd35848d7e7dc6df33fd27587`,
+  ZIP sorgenti riallineato dopo l'aggiornamento del changelog.
+  `tools/VerifyMESHingV318ReleaseAssets.py` PASS su tutti e dieci gli asset.
+- Ripetizione della matrice sulla DLL attuale interrotta dal timeout esterno;
+  ripresi e completati i casi mancanti in istanze isolate. Sommari e log
+  complessivi: **36/36 SAP + 36/36 Bridge PASS** sulla DLL finale. Dettagli
+  in `docs/MESHING_3_0_18_REGRESSION_LOCAL.md`.

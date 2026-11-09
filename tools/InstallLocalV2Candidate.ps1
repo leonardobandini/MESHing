@@ -1,11 +1,15 @@
 # Install a locally built V2 candidate without modifying the published package.
-param([string]$Version = '2.0.42')
+param([string]$Version = '2.0.42', [switch]$FullVersion)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $parent = Join-Path $env:TEMP 'opencode'
 $installed = Join-Path $env:LOCALAPPDATA 'Programs\SAP2000QuadMesher'
 $dll = Join-Path $root 'SapQuadTransitionPlugin\bin\Release\net48\SapQuadTransitionPlugin.dll'
 $backend = Join-Path $root 'SapQuadTransitionPlugin\sap_gmsh_mesher.py'
+$frozen = Join-Path $root 'packaging\dist-v2\SapQuadMesherBackend'
+$installerBuild = Join-Path $root 'packaging\bin\Release\net48\SQMPluginInstaller.exe'
+$setupBuild = Join-Path $root 'packaging\bin\Release\net48\MESHingSetup.exe'
+$helpSource = Join-Path $root 'docs\help-gmsh-v2'
 $id = [Guid]::NewGuid().ToString('N')
 $backup = Join-Path $parent ('sqm-v2-before-local-' + $Version + '-' + $id)
 $stage = Join-Path $parent ('sqm-v2-local-candidate-' + $Version + '-' + $id)
@@ -22,6 +26,15 @@ if (-not (Test-Path -LiteralPath $parent -PathType Container) -or
 }
 $installer = Join-Path $installed 'SQMPluginInstaller.exe'
 if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw 'Installed V2 installer is missing.' }
+if ($FullVersion -and (-not (Test-Path -LiteralPath (Join-Path $frozen 'SapQuadMesherBackend.exe') -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $installerBuild -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $setupBuild -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $helpSource -PathType Container) -or
+    (Get-Item -LiteralPath (Join-Path $frozen 'SapQuadMesherBackend.exe')).VersionInfo.FileVersion -ne "$Version.0" -or
+    (Get-Item -LiteralPath $installerBuild).VersionInfo.FileVersion -ne "$Version.0" -or
+    (Get-Item -LiteralPath $setupBuild).VersionInfo.FileVersion -ne "$Version.0")) {
+    throw 'Full-version build inputs missing or version-inconsistent.'
+}
 $oldDllHash = (Get-FileHash -LiteralPath (Join-Path $installed 'SapQuadTransitionPlugin.dll') -Algorithm SHA256).Hash
 $oldBackendHash = (Get-FileHash -LiteralPath (Join-Path $installed 'sap_gmsh_mesher.py') -Algorithm SHA256).Hash
 Copy-Item -LiteralPath $installed -Destination $backup -Recurse
@@ -35,6 +48,20 @@ Copy-Item -LiteralPath $backup -Destination $stage -Recurse
 try {
     Copy-Item -LiteralPath $dll -Destination (Join-Path $stage 'SapQuadTransitionPlugin.dll') -Force
     Copy-Item -LiteralPath $backend -Destination (Join-Path $stage 'sap_gmsh_mesher.py') -Force
+    if ($FullVersion) {
+        Copy-Item -LiteralPath $installerBuild -Destination (Join-Path $stage 'SQMPluginInstaller.exe') -Force
+        Copy-Item -LiteralPath $setupBuild -Destination (Join-Path $stage 'MESHingSetup.exe') -Force
+        Remove-Item -LiteralPath (Join-Path $stage 'mesher') -Recurse -Force
+        Copy-Item -LiteralPath $frozen -Destination (Join-Path $stage 'mesher') -Recurse
+        Remove-Item -LiteralPath (Join-Path $stage 'docs\help-gmsh-v2') -Recurse -Force
+        Copy-Item -LiteralPath $helpSource -Destination (Join-Path $stage 'docs\help-gmsh-v2') -Recurse
+        Copy-Item -LiteralPath (Join-Path $root 'SapQuadTransitionPlugin\README-GMSH-V2.md') `
+            -Destination (Join-Path $stage 'README-GMSH-V2.md') -Force
+        Copy-Item -LiteralPath (Join-Path $root 'SapQuadTransitionPlugin\README-GMSH-V2.md') `
+            -Destination (Join-Path $stage 'README.md') -Force
+        $sourceGuide = [IO.File]::ReadAllText((Join-Path $root 'packaging\SOURCE.template.md')).Replace('{VERSION}', $Version)
+        [IO.File]::WriteAllText((Join-Path $stage 'SOURCE.md'), $sourceGuide, [Text.Encoding]::UTF8)
+    }
     & (Join-Path $stage 'SQMPluginInstaller.exe') verify $stage
     if ($LASTEXITCODE -ne 0) { throw "Candidate verification failed; rollback remains at $backup" }
     if (@(Get-Process SAP2000 -ErrorAction SilentlyContinue).Count) {
@@ -45,6 +72,13 @@ try {
     $installedDll = Join-Path $installed 'SapQuadTransitionPlugin.dll'
     $actualDllHash = (Get-FileHash -LiteralPath $installedDll -Algorithm SHA256).Hash
     $actualBackendHash = (Get-FileHash -LiteralPath (Join-Path $installed 'sap_gmsh_mesher.py') -Algorithm SHA256).Hash
+    if ($FullVersion -and
+        ((Get-FileHash -LiteralPath (Join-Path $installed 'mesher\SapQuadMesherBackend.exe') -Algorithm SHA256).Hash -ne
+            (Get-FileHash -LiteralPath (Join-Path $frozen 'SapQuadMesherBackend.exe') -Algorithm SHA256).Hash -or
+         (Get-Item -LiteralPath (Join-Path $installed 'SQMPluginInstaller.exe')).VersionInfo.FileVersion -ne "$Version.0" -or
+         (Get-Item -LiteralPath (Join-Path $installed 'MESHingSetup.exe')).VersionInfo.FileVersion -ne "$Version.0")) {
+        throw "Installed frozen backend or installers differ; rollback remains at $backup"
+    }
     $registration = 'HKCU:\Software\Classes\CLSID\{D64E6254-E9B2-46C8-8C0E-C8A5C78D94AA}\InprocServer32'
     if ((Get-Item -LiteralPath $installedDll).VersionInfo.FileVersion -ne "$Version.0" -or
         $actualDllHash -ne (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash -or

@@ -61,9 +61,9 @@ neither the sources nor this script claim a bit-for-bit rebuild of that wheel.
 `-SkipBackendBuild` reuses a previously built frozen backend.
 
 `PrepareMESHingCandidate.ps1` stages ten local candidate assets and checksums under
-`artifacts/candidate-v3.0.15/` for the current project version, including a `MESHing-latest.zip` byte-identical
+`artifacts/candidate-v3.0.18/` for the current project version, including a `MESHing-latest.zip` byte-identical
 to the versioned installer. Building and testing these assets does not publish
-them or move the public Latest link. The bilingual 3.0.15 help is included in
+them or move the public Latest link. The bilingual 3.0.18 help is included in
 the plugin build and the corresponding source archive.
 
 `PrepareV305Candidate.ps1` stages eight versioned binary/source assets and

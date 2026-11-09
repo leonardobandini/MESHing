@@ -1,5 +1,12 @@
 # MESHing — changelog
 
+## MESHing 3.0.18 — pubblicata il 9 novembre 2026
+
+- Prima di Genera, una diagnostica unica opzionale e attiva per default elenca le aree non complanari e le coppie di nodi selezionati troppo vicini. La soglia per i nodi è configurabile come percentuale della dimensione massima della mesh (default 5%); opzione e valore vengono ricordati. La diagnostica legge la selezione corrente, anche se effettuata dopo l'apertura del plugin.
+- Le due tabelle diagnostiche sono presentate in schede, copiabili e con selezione mirata nel modello. Migliaia di aree possono essere selezionate velocemente tramite un gruppo temporaneo rimosso dopo la selezione. La finestra di attesa viene chiusa prima di aprire gli avvisi e ricompare solo se si prosegue con la generazione.
+- La scheda **Additional meshing options** conserva le opzioni geometriche; la nuova **General options** contiene backup numerato e diagnostica preliminare. Disattivare la diagnostica non disattiva il controllo Gmsh dei triangoli quasi allineati, che resta obbligatorio prima dell'import FAST. Non viene applicato alcun raffinamento automatico ai nodi ravvicinati.
+- Help IT/EN aggiornato. Nessun modello di progetto è incluso nello ZIP.
+
 ## MESHing 3.0.15 — pubblicata il 5 novembre 2026
 
 - Le finestre delle impostazioni Gmsh restano davanti a MESHing e SAP2000 anche quando MESHing non è TopMost. La correzione mantiene la finestra SAP2000 davanti alle altre applicazioni senza farla salire sopra il dialogo modale.

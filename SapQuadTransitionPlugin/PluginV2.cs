@@ -39,7 +39,7 @@ namespace SapQuadTransitionPlugin
         private const int AreaObjectType = 5;
         private const int SolidObjectType = 6;
         private const int LinkObjectType = 7;
-        private const string PluginVersion = "3.0.15";
+        private const string PluginVersion = "3.0.18";
         private const string WindowTitle = "MESHing " + PluginVersion;
         private const string UpdateManifestUrl = "https://api.github.com/repos/leonardobandini/MESHing/releases/latest";
         private const string LatestDownloadUrl = "https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip";
@@ -230,6 +230,7 @@ namespace SapQuadTransitionPlugin
                 new[] { "Select an opening-boundary group.", "Selezionare un gruppo per il contorno delle aperture." },
                 new[] { "Select a hole-center group.", "Selezionare un gruppo di centri dei fori." },
                 new[] { "Invalid hole diameter.", "Diametro del foro non valido." },
+                new[] { "Checking selected objects... Please wait...", "Controllo degli oggetti selezionati... Attendere..." },
                 new[] { "Preparing geometry...", "Preparazione della geometria..." },
                 new[] { "Generating and optimizing the mesh...", "Generazione e ottimizzazione della mesh..." },
                 new[] { "Generating the mesh...", "Generazione della mesh..." },
@@ -1009,14 +1010,16 @@ namespace SapQuadTransitionPlugin
             };
             try
             {
-                initialContexts = areas.Length > 0
-                    ? BuildAreaContexts(model, areas, selectedPoints, selectedFrames, startupCheckpoint)
-                    : new List<AreaContext>();
+                initialContexts = new List<AreaContext>();
+                if (areas.Length > 0 && areas.Length <= LiveSelection.MaximumLiveAreas)
+                    try { initialContexts = BuildAreaContexts(model, areas, selectedPoints, selectedFrames, startupCheckpoint); }
+                    catch (NonPlanarAreasException) { /* Report only after Generate, with the current selection. */ }
                 if (initialContexts.Count > 0)
                     ValidateExistingConstraintPositions(model, initialContexts, selectedPoints,
                         selectedFrames, Math.Max(Tolerance, 1e-6));
                 Console.WriteLine("mesh-stage=area-contexts-ready");
-                hasFrames = initialContexts.Count > 1 || initialContexts.Any(context => context.FrameConstraints.Count > 0);
+                hasFrames = areas.Length > 1 || selectedFrames.Length > 0 ||
+                    initialContexts.Any(context => context.FrameConstraints.Count > 0);
                 pointGroups = ReadPointGroups(model, startupCheckpoint);
                 openingGroups = ReadOpeningGroups(model, startupCheckpoint);
                 symmetryAxes = DetectSymmetryAxes(initialContexts, startupCheckpoint);
@@ -1046,6 +1049,9 @@ namespace SapQuadTransitionPlugin
                     initialContexts.Count(context => context.CornerNames.Length > 4),
                     selectedFrames.Length, selectedTypes.Count(type => type == LinkObjectType), selectedPoints.Length);
                 dialog.SetRequiresSavedModel(!modelHasSavedFile);
+                if (areas.Length > LiveSelection.MaximumLiveAreas)
+                    dialog.UpdateOversizedSelection(areas.Length, selectedFrames.Length,
+                        selection.Links, selectedPoints.Length, LiveSelection.MaximumLiveAreas);
                 bool leaveCompletedDialog = Environment.GetEnvironmentVariable("SAP_QUAD_LEAVE_COMPLETED_DIALOG") == "1";
                 bool automatedExample = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_SIZE"));
                 // Native ownership keeps MESHing above its host without placing
@@ -1088,7 +1094,8 @@ namespace SapQuadTransitionPlugin
                         if (!oversizedSelection || next.Areas.Length != areas.Length || force)
                         {
                             selection = next;
-                            areas = next.Areas;
+                            areas = next.Areas; selectedPoints = next.Points; selectedFrames = next.Frames;
+                            selectedTypes = next.Types; selectedNames = next.Names;
                             oversizedSelection = true;
                             dialog.UpdateOversizedSelection(areas.Length, next.Frames.Length,
                                 next.Links, next.Points.Length, LiveSelection.MaximumLiveAreas);
@@ -1104,9 +1111,10 @@ namespace SapQuadTransitionPlugin
                         string.Equals(nextModelPath, selectionModelPath, StringComparison.OrdinalIgnoreCase) &&
                         string.Equals(nextLengthUnit, dialog.LengthUnit, StringComparison.OrdinalIgnoreCase)) return;
                     oversizedSelection = false;
-                    List<AreaContext> updated = next.Areas.Length > 0
-                        ? BuildAreaContexts(model, next.Areas, next.Points, next.Frames)
-                        : new List<AreaContext>();
+                    List<AreaContext> updated = new List<AreaContext>();
+                    if (next.Areas.Length > 0)
+                        try { updated = BuildAreaContexts(model, next.Areas, next.Points, next.Frames); }
+                        catch (NonPlanarAreasException) { /* Generate shows the complete diagnostic. */ }
                     if (updated.Count > 0)
                         ValidateExistingConstraintPositions(model, updated, next.Points,
                             next.Frames, Math.Max(Tolerance, 1e-6));
@@ -1213,13 +1221,86 @@ namespace SapQuadTransitionPlugin
                     try
                     {
                         dialog.BlockHostForOperation();
-                        dialog.BeginWork("Preparing geometry...");
+                        dialog.BeginWork(dialog.CheckSelectedGeometry
+                            ? "Checking selected objects... Please wait..." : "Preparing geometry...");
                         var generationClock = Stopwatch.StartNew();
                         dialog.ThrowIfCancellationRequested();
                         if (sessionLock.Active) sessionLock.CheckReady();
                         else if (model.GetModelIsLocked())
                             throw new InvalidOperationException(L("The model is locked. Unlock it before generating the mesh.",
                                 "Il modello e bloccato. Sbloccarlo prima di generare la mesh."));
+                        NonPlanarAreasException nonPlanar = dialog.CheckSelectedGeometry
+                            ? FindNonPlanarAreas(model, areas, dialog.PumpCancellation) : null;
+                        var closeJoints = dialog.CheckSelectedGeometry
+                            ? FindCloseSelectedJoints(model, selectedPoints,
+                                dialog.MaxSize * dialog.CloseJointPercent / 100, 200, dialog.PumpCancellation)
+                            : new List<CloseInputJoint>();
+                        if (dialog.CheckSelectedGeometry && nonPlanar == null && initialContexts.Count > 0)
+                        {
+                            foreach (CloseInputJoint pair in FindCloseInputJoints(initialContexts,
+                                dialog.MaxSize * dialog.CloseJointPercent / 100, 200))
+                            {
+                                string key = string.Compare(pair.FirstName, pair.SecondName, StringComparison.OrdinalIgnoreCase) < 0
+                                    ? pair.FirstName + "\u001f" + pair.SecondName : pair.SecondName + "\u001f" + pair.FirstName;
+                                if (!closeJoints.Any(existing => (string.Compare(existing.FirstName, existing.SecondName,
+                                    StringComparison.OrdinalIgnoreCase) < 0
+                                        ? existing.FirstName + "\u001f" + existing.SecondName
+                                        : existing.SecondName + "\u001f" + existing.FirstName) == key))
+                                    closeJoints.Add(pair);
+                                if (closeJoints.Count >= 200) break;
+                            }
+                        }
+                        if (nonPlanar != null && automatedExample) throw nonPlanar;
+                        bool diagnosticDialog = !automatedExample &&
+                            (nonPlanar != null || closeJoints.Count > 0);
+                        if (diagnosticDialog) dialog.PauseProgressForDiagnostic();
+                        DialogResult diagnosticDecision = nonPlanar != null && closeJoints.Count > 0
+                            ? ShowCombinedDiagnostics(nonPlanar, closeJoints,
+                                dialog.MaxSize * dialog.CloseJointPercent / 100,
+                                dialog.LengthUnit, dialog)
+                            : nonPlanar != null ? ShowNonPlanarAreas(nonPlanar, dialog.LengthUnit, dialog)
+                            : dialog.CheckSelectedGeometry
+                                ? dialog.ConfirmCloseInputJoints(closeJoints,
+                                    dialog.MaxSize * dialog.CloseJointPercent / 100, automatedExample)
+                                : DialogResult.Yes;
+                        if (nonPlanar != null && diagnosticDecision == DialogResult.Yes)
+                        {
+                            dialog.Cancelled();
+                            dialog.DeclineCloseJointPreflight();
+                            SelectDiagnosticAreasByTemporaryGroup(model,
+                                nonPlanar.Areas.Select(item => item.Area).ToArray());
+                            model.View.RefreshView(0, false);
+                            dialog.Close();
+                            return;
+                        }
+                        if (diagnosticDecision == DialogResult.Retry)
+                        {
+                            dialog.Cancelled();
+                            dialog.DeclineCloseJointPreflight();
+                            Check(model.SelectObj.ClearSelection(), "clearing selection to inspect nearby joints", "SelectObj.ClearSelection");
+                            foreach (string name in closeJoints.SelectMany(pair => new[] { pair.FirstName, pair.SecondName })
+                                .Distinct(StringComparer.OrdinalIgnoreCase))
+                                Check(model.PointObj.SetSelected(name, true, eItemType.Objects),
+                                    "selecting nearby joint " + name, "PointObj.SetSelected");
+                            model.View.RefreshView(0, false);
+                            dialog.Close();
+                            return;
+                        }
+                        if (nonPlanar != null || diagnosticDecision != DialogResult.Yes ||
+                            areas.Length > LiveSelection.MaximumLiveAreas)
+                        {
+                            dialog.Cancelled();
+                            dialog.DeclineCloseJointPreflight();
+                            if (nonPlanar == null && diagnosticDecision == DialogResult.Yes &&
+                                areas.Length > LiveSelection.MaximumLiveAreas)
+                                dialog.ShowSelectionLimit(LiveSelection.MaximumLiveAreas);
+                            continue;
+                        }
+                        if (diagnosticDialog) dialog.ResumeProgressAfterDiagnostic();
+                        if (initialContexts.Count == 0 && areas.Length > 0)
+                            initialContexts = BuildAreaContexts(model, areas, selectedPoints, selectedFrames,
+                                dialog.PumpCancellation);
+                        dialog.SetIndeterminate("Preparing geometry...");
                         ValidateExistingConstraintPositions(model, initialContexts, selectedPoints,
                             selectedFrames, Math.Max(Tolerance, Math.Max(1, dialog.MaxSize) * 1e-6));
                         RecordGenerationPhase("validate-input-joints", generationClock);
@@ -2146,15 +2227,385 @@ namespace SapQuadTransitionPlugin
                             throw new InvalidDataException("The full selection is not exactly symmetric about the selected axis.");
         }
 
+        private sealed class CloseInputJoint
+        {
+            public readonly string Area, FirstName, SecondName;
+            public readonly double[] First, Second;
+            public readonly double Distance;
+            public CloseInputJoint(string area, ConstraintPoint first, ConstraintPoint second, double distance)
+            {
+                Area = area; FirstName = first.Name; SecondName = second.Name;
+                First = first.Coordinates; Second = second.Coordinates; Distance = distance;
+            }
+        }
+
+        private sealed class NonPlanarPolygonException : InvalidOperationException
+        {
+            public readonly int VertexIndex;
+            public readonly double Deviation;
+            public NonPlanarPolygonException(int vertexIndex, double deviation)
+                : base("The area must be planar.")
+            { VertexIndex = vertexIndex; Deviation = deviation; }
+        }
+
+        private sealed class NonPlanarAreaException : InvalidOperationException
+        {
+            public readonly string Vertex;
+            public readonly double Deviation;
+            public readonly double[] Coordinates;
+            public NonPlanarAreaException(string vertex, double deviation, double[] coordinates)
+                : base("The area must be planar.")
+            { Vertex = vertex; Deviation = deviation; Coordinates = coordinates; }
+        }
+
+        private sealed class NonPlanarArea
+        {
+            public readonly string Area, Vertex;
+            public readonly double Deviation;
+            public readonly double[] Coordinates;
+            public NonPlanarArea(string area, string vertex, double deviation, double[] coordinates)
+            { Area = area; Vertex = vertex; Deviation = deviation; Coordinates = coordinates; }
+        }
+
+        private sealed class NonPlanarAreasException : InvalidOperationException
+        {
+            public readonly List<NonPlanarArea> Areas;
+            public readonly int Inspected, Selected;
+            public NonPlanarAreasException(List<NonPlanarArea> areas, int inspected, int selected)
+                : base("The area must be planar. " + areas.Count + " non-planar areas among " +
+                    inspected + " inspected of " + selected + " selected: " +
+                    string.Join(", ", areas.Take(5).Select(item => item.Area + " (" +
+                        item.Deviation.ToString("G6", CultureInfo.InvariantCulture) + ")")))
+            { Areas = areas; Inspected = inspected; Selected = selected; }
+        }
+
+        private static DialogResult ShowNonPlanarAreas(NonPlanarAreasException report, string unit, Form parent = null)
+        {
+            using (var window = new Form())
+            {
+                window.Text = L("Non-planar selected areas", "Aree selezionate non complanari");
+                window.ClientSize = new Size(970, 550);
+                window.MinimumSize = new Size(760, 390);
+                window.StartPosition = FormStartPosition.CenterScreen;
+                window.Font = new Font("Segoe UI", 9);
+                window.BackColor = Color.White;
+                window.ShowInTaskbar = false;
+                ApplyPluginIcon(window);
+                var message = new Label { Left = 16, Top = 16, Width = 938, Height = 73,
+                    Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right,
+                    Text = L("MESHing found selected areas whose vertices are not coplanar. " +
+                        "The maximum perpendicular deviation is measured from the plane defined by the first " +
+                        "edge and the first non-collinear vertex (tolerance: " +
+                        Tolerance.ToString("G", CultureInfo.InvariantCulture) + " " + unit +
+                        "). Review the areas and their original geometry. Select rows and press Ctrl+C to copy them.",
+                        "MESHing ha trovato aree selezionate con vertici non complanari. Lo scostamento " +
+                        "massimo perpendicolare è misurato dal piano definito dal primo lato e dal primo vertice " +
+                        "non allineato (tolleranza: " + Tolerance.ToString("G", CultureInfo.InvariantCulture) +
+                        " " + unit + "). Controllare le aree e la geometria originale. " +
+                        "Selezionare le righe e premere Ctrl+C per copiarle.") };
+                window.Controls.Add(message);
+                var grid = new DataGridView { Left = 16, Top = 98, Width = 938, Height = 367,
+                    Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top | AnchorStyles.Bottom,
+                    ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+                    AllowUserToResizeRows = false, MultiSelect = true,
+                    SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                    ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText,
+                    RowHeadersVisible = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill };
+                foreach (string title in new[] { L("Area", "Area"), L("Most distant joint", "Nodo più distante"),
+                    L("Deviation (", "Scostamento (") + unit + ")", "X", "Y", "Z" })
+                    grid.Columns.Add(title, title);
+                foreach (NonPlanarArea area in report.Areas.OrderByDescending(item => item.Deviation))
+                    grid.Rows.Add(area.Area, area.Vertex,
+                        area.Deviation.ToString("G10", CultureInfo.CurrentCulture),
+                        area.Coordinates[0].ToString("G10", CultureInfo.CurrentCulture),
+                        area.Coordinates[1].ToString("G10", CultureInfo.CurrentCulture),
+                        area.Coordinates[2].ToString("G10", CultureInfo.CurrentCulture));
+                grid.ClearSelection();
+                window.Controls.Add(grid);
+                window.Controls.Add(new Label { Left = 16, Top = 479, Width = 610, Height = 50,
+                    Anchor = AnchorStyles.Left | AnchorStyles.Bottom,
+                    Text = L("Found: ", "Trovate: ") + report.Areas.Count + " / " + report.Inspected +
+                        L(" areas examined (", " aree esaminate (") + report.Selected +
+                        L(" selected).", " selezionate).") });
+                var close = new Button { Left = 646, Top = 498, Width = 140, Height = 32,
+                    Anchor = AnchorStyles.Right | AnchorStyles.Bottom,
+                    Text = L("Close", "Chiudi"), DialogResult = DialogResult.Cancel };
+                var select = new Button { Left = 794, Top = 498, Width = 160, Height = 32,
+                    Anchor = AnchorStyles.Right | AnchorStyles.Bottom,
+                    Text = L("Select listed areas", "Seleziona le aree"), DialogResult = DialogResult.Yes };
+                StyleButton(close, false); StyleButton(select, true);
+                window.Controls.Add(close); window.Controls.Add(select);
+                window.AcceptButton = close; window.CancelButton = close;
+                return parent == null
+                    ? ShowHostModal(IntPtr.Zero, Process.GetCurrentProcess().MainWindowHandle,
+                        () => window.ShowDialog())
+                    : ShowHostModal(parent.Handle, Process.GetCurrentProcess().MainWindowHandle,
+                        () => window.ShowDialog(parent));
+            }
+        }
+
+        private static DialogResult ShowCombinedDiagnostics(NonPlanarAreasException nonPlanar,
+            List<CloseInputJoint> closeJoints, double limit, string unit, Form parent = null)
+        {
+            using (var window = new Form())
+            {
+                window.Text = L("Selected-object diagnostics", "Controlli degli oggetti selezionati");
+                window.ClientSize = new Size(1100, 610);
+                window.MinimumSize = new Size(880, 440);
+                window.Font = new Font("Segoe UI", 9);
+                window.BackColor = Color.White;
+                window.StartPosition = FormStartPosition.CenterParent;
+                window.ShowInTaskbar = false;
+                ApplyPluginIcon(window);
+                window.Controls.Add(new Label { Left = 16, Top = 12, Width = 1068, Height = 70,
+                    Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right,
+                    Text = L("The selected model contains non-planar areas and closely spaced joints. " +
+                        "Review both tabs before editing the original geometry. Select rows and press Ctrl+C to copy them. " +
+                        "No mesh has been created.",
+                        "Il modello selezionato contiene aree non complanari e nodi troppo vicini. " +
+                        "Esaminare entrambe le schede prima di correggere la geometria originale. " +
+                        "Selezionare le righe e premere Ctrl+C per copiarle. Nessuna mesh è stata creata.") });
+                var tabs = new TabControl { Left = 16, Top = 88, Width = 1068, Height = 452,
+                    Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top | AnchorStyles.Bottom };
+                var areasPage = new TabPage(L("Non-planar areas (", "Aree non complanari (") + nonPlanar.Areas.Count + ")");
+                var jointsPage = new TabPage(L("Close joints (", "Nodi vicini (") + closeJoints.Count + ")");
+
+                var areaGrid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true,
+                    AllowUserToAddRows = false, AllowUserToDeleteRows = false, MultiSelect = true,
+                    SelectionMode = DataGridViewSelectionMode.FullRowSelect, RowHeadersVisible = false,
+                    ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText,
+                    AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill };
+                foreach (string title in new[] { L("Area", "Area"), L("Most distant joint", "Nodo più distante"),
+                    L("Deviation (", "Scostamento (") + unit + ")", "X", "Y", "Z" })
+                    areaGrid.Columns.Add(title, title);
+                foreach (NonPlanarArea area in nonPlanar.Areas.OrderByDescending(item => item.Deviation))
+                    areaGrid.Rows.Add(area.Area, area.Vertex,
+                        area.Deviation.ToString("G10", CultureInfo.CurrentCulture),
+                        area.Coordinates[0].ToString("G10", CultureInfo.CurrentCulture),
+                        area.Coordinates[1].ToString("G10", CultureInfo.CurrentCulture),
+                        area.Coordinates[2].ToString("G10", CultureInfo.CurrentCulture));
+                areaGrid.ClearSelection();
+                areasPage.Controls.Add(areaGrid);
+
+                var jointGrid = new DataGridView { Dock = DockStyle.Fill, ReadOnly = true,
+                    AllowUserToAddRows = false, AllowUserToDeleteRows = false, MultiSelect = true,
+                    SelectionMode = DataGridViewSelectionMode.FullRowSelect, RowHeadersVisible = false,
+                    ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText,
+                    AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill };
+                foreach (string title in new[] { L("Area", "Area"), L("Joint A", "Nodo A"),
+                    L("Joint B", "Nodo B"), L("Distance (", "Distanza (") + unit + ")",
+                    "X A", "Y A", "Z A", "X B", "Y B", "Z B" })
+                    jointGrid.Columns.Add(title, title);
+                foreach (CloseInputJoint pair in closeJoints.OrderBy(item => item.Distance))
+                    jointGrid.Rows.Add(pair.Area, pair.FirstName, pair.SecondName,
+                        pair.Distance.ToString("G10", CultureInfo.CurrentCulture),
+                        pair.First[0].ToString("G10", CultureInfo.CurrentCulture),
+                        pair.First[1].ToString("G10", CultureInfo.CurrentCulture),
+                        pair.First[2].ToString("G10", CultureInfo.CurrentCulture),
+                        pair.Second[0].ToString("G10", CultureInfo.CurrentCulture),
+                        pair.Second[1].ToString("G10", CultureInfo.CurrentCulture),
+                        pair.Second[2].ToString("G10", CultureInfo.CurrentCulture));
+                jointGrid.ClearSelection();
+                jointsPage.Controls.Add(jointGrid);
+                tabs.TabPages.Add(areasPage); tabs.TabPages.Add(jointsPage);
+                window.Controls.Add(tabs);
+                window.Controls.Add(new Label { Left = 16, Top = 552, Width = 515, Height = 45,
+                    Anchor = AnchorStyles.Left | AnchorStyles.Bottom,
+                    Text = L("Planarity tolerance: ", "Tolleranza di planarità: ") +
+                        Tolerance.ToString("G", CultureInfo.InvariantCulture) + " " + unit +
+                        L("; close-joint threshold: ", "; soglia nodi vicini: ") +
+                        limit.ToString("G6", CultureInfo.CurrentCulture) + " " + unit });
+                var close = new Button { Left = 552, Top = 561, Width = 142, Height = 32,
+                    Anchor = AnchorStyles.Right | AnchorStyles.Bottom,
+                    Text = L("Close", "Chiudi"), DialogResult = DialogResult.Cancel };
+                var selectAreas = new Button { Left = 702, Top = 561, Width = 177, Height = 32,
+                    Anchor = AnchorStyles.Right | AnchorStyles.Bottom,
+                    Text = L("Select areas", "Seleziona le aree"), DialogResult = DialogResult.Yes };
+                var selectJoints = new Button { Left = 887, Top = 561, Width = 197, Height = 32,
+                    Anchor = AnchorStyles.Right | AnchorStyles.Bottom,
+                    Text = L("Select joints", "Seleziona i nodi"), DialogResult = DialogResult.Retry };
+                StyleButton(close, false); StyleButton(selectAreas, true); StyleButton(selectJoints, false);
+                window.Controls.Add(close); window.Controls.Add(selectAreas); window.Controls.Add(selectJoints);
+                window.AcceptButton = close; window.CancelButton = close;
+                return parent == null
+                    ? ShowHostModal(IntPtr.Zero, Process.GetCurrentProcess().MainWindowHandle,
+                        () => window.ShowDialog())
+                    : ShowHostModal(parent.Handle, Process.GetCurrentProcess().MainWindowHandle,
+                        () => window.ShowDialog(parent));
+            }
+        }
+
+        private static NonPlanarAreasException FindNonPlanarAreas(cSapModel model, string[] areas, Action checkpoint)
+        {
+            var found = new List<NonPlanarArea>();
+            for (int i = 0; i < areas.Length; i++)
+            {
+                if (i % 128 == 0 && checkpoint != null) checkpoint();
+                try { BuildAreaContext(model, areas[i]); }
+                catch (NonPlanarAreaException error)
+                { found.Add(new NonPlanarArea(areas[i], error.Vertex, error.Deviation, error.Coordinates)); }
+            }
+            return found.Count == 0 ? null : new NonPlanarAreasException(found, areas.Length, areas.Length);
+        }
+
+        private static void SelectDiagnosticAreasByTemporaryGroup(cSapModel model, string[] areas)
+        {
+            string[] names = areas.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (names.Length == 0) throw new ArgumentException("No non-planar areas to select.");
+            string group = "MESHing_DIAG_" + Guid.NewGuid().ToString("N");
+            Check(model.GroupDef.SetGroup(group), "creating temporary diagnostic selection group", "GroupDef.SetGroup");
+            Exception failure = null;
+            try
+            {
+                foreach (string name in names)
+                    Check(model.AreaObj.SetGroupAssign(name, group),
+                        "assigning diagnostic area " + name, "AreaObj.SetGroupAssign");
+                Check(model.SelectObj.ClearSelection(), "clearing selection for area inspection", "SelectObj.ClearSelection");
+                Check(model.SelectObj.Group(group), "selecting diagnostic areas together", "SelectObj.Group");
+                int count = 0;
+                int[] types = null;
+                string[] selected = null;
+                Check(model.SelectObj.GetSelected(ref count, ref types, ref selected),
+                    "checking selected diagnostic areas", "SelectObj.GetSelected");
+                if (count != names.Length || types == null || selected == null ||
+                    types.Take(count).Any(type => type != AreaObjectType) ||
+                    !new HashSet<string>(selected.Take(count), StringComparer.OrdinalIgnoreCase)
+                        .SetEquals(names))
+                    throw new InvalidDataException("The temporary group did not select exactly the reported areas.");
+            }
+            catch (Exception error) { failure = error; throw; }
+            finally
+            {
+                int deleted = model.GroupDef.Delete(group);
+                if (deleted != 0)
+                {
+                    var cleanup = new InvalidOperationException("Temporary diagnostic group " + group +
+                        " could not be removed: GroupDef.Delete code " + deleted + ".");
+                    if (failure == null) throw cleanup;
+                    LogPluginException(cleanup);
+                }
+                else
+                {
+                    int count = 0;
+                    string[] remaining = null;
+                    Check(model.GroupDef.GetNameList(ref count, ref remaining),
+                        "checking temporary group cleanup", "GroupDef.GetNameList");
+                    if (remaining != null && remaining.Contains(group, StringComparer.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("Temporary diagnostic group still exists: " + group);
+                }
+            }
+        }
+
+        private static List<CloseInputJoint> FindCloseSelectedJoints(cSapModel model, string[] names,
+            double limit, int maxPairs, Action checkpoint)
+        {
+            var result = new List<CloseInputJoint>();
+            if (limit <= 0 || maxPairs <= 0) return result;
+            var buckets = new Dictionary<Tuple<long, long, long>, List<ConstraintPoint>>();
+            for (int i = 0; i < names.Length; i++)
+            {
+                if (i % 128 == 0 && checkpoint != null) checkpoint();
+                var point = new ConstraintPoint(names[i], Coordinate(model, names[i]));
+                long x = (long)Math.Floor(point.Coordinates[0] / limit);
+                long y = (long)Math.Floor(point.Coordinates[1] / limit);
+                long z = (long)Math.Floor(point.Coordinates[2] / limit);
+                for (int dx = -1; dx <= 1; dx++)
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dz = -1; dz <= 1; dz++)
+                        {
+                            List<ConstraintPoint> nearby;
+                            if (!buckets.TryGetValue(Tuple.Create(x + dx, y + dy, z + dz), out nearby)) continue;
+                            foreach (ConstraintPoint other in nearby)
+                            {
+                                double gap = Distance(point.Coordinates, other.Coordinates);
+                                if (gap >= limit || string.Equals(point.Name, other.Name, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+                                result.Add(new CloseInputJoint("—", other, point, gap));
+                                if (result.Count >= maxPairs) return result.OrderBy(item => item.Distance).ToList();
+                            }
+                        }
+                var cell = Tuple.Create(x, y, z);
+                List<ConstraintPoint> bucket;
+                if (!buckets.TryGetValue(cell, out bucket)) buckets[cell] = bucket = new List<ConstraintPoint>();
+                bucket.Add(point);
+            }
+            return result.OrderBy(item => item.Distance).ToList();
+        }
+
+        private static List<CloseInputJoint> FindCloseInputJoints(List<AreaContext> contexts, double limit, int maxPairs)
+        {
+            var matches = new List<CloseInputJoint>();
+            if (limit <= 0 || maxPairs < 1) return matches;
+            var reported = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (AreaContext context in contexts)
+            {
+                var unique = new Dictionary<string, ConstraintPoint>(StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < context.Corners.Length; i++)
+                    unique[context.CornerNames[i]] = new ConstraintPoint(context.CornerNames[i], context.Corners[i]);
+                foreach (BoundaryPoint point in context.EdgePoints.SelectMany(edge => edge))
+                    if (point.Name != "QT_SHARED" && point.Name != "QT_SIZE")
+                        unique[point.Name] = new ConstraintPoint(point.Name, point.Coordinates);
+                foreach (ConstraintPoint point in context.InteriorPoints)
+                    unique[point.Name] = point;
+                foreach (FrameConstraint frame in context.FrameConstraints)
+                {
+                    if (!string.IsNullOrEmpty(frame.FirstName) &&
+                        frame.FirstName != "QT_SHARED" && frame.FirstName != "QT_SIZE")
+                        unique[frame.FirstName] = new ConstraintPoint(frame.FirstName, frame.First);
+                    if (!string.IsNullOrEmpty(frame.SecondName) &&
+                        frame.SecondName != "QT_SHARED" && frame.SecondName != "QT_SIZE")
+                        unique[frame.SecondName] = new ConstraintPoint(frame.SecondName, frame.Second);
+                }
+                var buckets = new Dictionary<Tuple<long, long, long>, List<ConstraintPoint>>();
+                foreach (ConstraintPoint point in unique.Values.OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    long x = (long)Math.Floor(point.Coordinates[0] / limit);
+                    long y = (long)Math.Floor(point.Coordinates[1] / limit);
+                    long z = (long)Math.Floor(point.Coordinates[2] / limit);
+                    for (int dx = -1; dx <= 1; dx++)
+                        for (int dy = -1; dy <= 1; dy++)
+                            for (int dz = -1; dz <= 1; dz++)
+                            {
+                                List<ConstraintPoint> nearby;
+                                if (!buckets.TryGetValue(Tuple.Create(x + dx, y + dy, z + dz), out nearby)) continue;
+                                foreach (ConstraintPoint other in nearby)
+                                {
+                                    double gap = Distance(point.Coordinates, other.Coordinates);
+                                    if (gap >= limit) continue;
+                                    string first = string.Compare(point.Name, other.Name, StringComparison.OrdinalIgnoreCase) < 0
+                                        ? point.Name : other.Name;
+                                    string second = first == point.Name ? other.Name : point.Name;
+                                    if (!reported.Add(first + "\u001f" + second)) continue;
+                                    matches.Add(new CloseInputJoint(context.Name, point, other, gap));
+                                    if (matches.Count >= maxPairs) return matches.OrderBy(item => item.Distance).ToList();
+                                }
+                            }
+                    var cell = Tuple.Create(x, y, z);
+                    List<ConstraintPoint> bucket;
+                    if (!buckets.TryGetValue(cell, out bucket)) buckets[cell] = bucket = new List<ConstraintPoint>();
+                    bucket.Add(point);
+                }
+            }
+            return matches.OrderBy(item => item.Distance).ToList();
+        }
+
         private static List<AreaContext> BuildAreaContexts(cSapModel model, string[] areas, string[] selectedPoints,
             string[] selectedFrames, Action checkpoint = null)
         {
             var contexts = new List<AreaContext>();
+            var nonPlanar = new List<NonPlanarArea>();
+            int inspected = 0;
             foreach (string area in areas)
             {
                 if (checkpoint != null) checkpoint();
-                contexts.Add(BuildAreaContext(model, area));
+                inspected++;
+                try { contexts.Add(BuildAreaContext(model, area)); }
+                catch (NonPlanarAreaException error)
+                {
+                    nonPlanar.Add(new NonPlanarArea(area, error.Vertex, error.Deviation, error.Coordinates));
+                }
             }
+            if (nonPlanar.Count > 0) throw new NonPlanarAreasException(nonPlanar, inspected, areas.Length);
             PreserveExistingBoundaryNodes(model, contexts, areas, checkpoint);
             foreach (string pointName in selectedPoints)
             {
@@ -2900,7 +3351,14 @@ namespace SapQuadTransitionPlugin
             Check(model.AreaObj.GetPoints(areaName, ref cornerCount, ref cornerNames), "reading area vertices for " + areaName, "AreaObj.GetPoints");
             if (cornerCount < 3) throw new InvalidOperationException("Area " + areaName + " must have at least three edges.");
             double[][] corners = cornerNames.Select(name => Coordinate(model, name)).ToArray();
-            var context = new AreaContext(areaName, cornerNames, corners, Plane.FromPolygon(corners));
+            Plane plane;
+            try { plane = Plane.FromPolygon(corners); }
+            catch (NonPlanarPolygonException error)
+            {
+                throw new NonPlanarAreaException(cornerNames[error.VertexIndex],
+                    error.Deviation, corners[error.VertexIndex]);
+            }
+            var context = new AreaContext(areaName, cornerNames, corners, plane);
             for (int edge = 0; edge < cornerCount; edge++)
             {
                 context.EdgePoints[edge].Add(new BoundaryPoint(cornerNames[edge], 0, corners[edge]));
@@ -7548,8 +8006,14 @@ namespace SapQuadTransitionPlugin
                 }
                 if (normal == null) throw new InvalidOperationException("Degenerate area.");
                 var plane = new Plane(points[0], Normalize(first), Normalize(Cross(normal, Normalize(first))), normal);
-                if (points.Any(point => Math.Abs(plane.SignedDistance(point)) > Tolerance))
-                    throw new InvalidOperationException("The area must be planar.");
+                int worst = -1;
+                double deviation = Tolerance;
+                for (int i = 0; i < points.Length; i++)
+                {
+                    double distance = Math.Abs(plane.SignedDistance(points[i]));
+                    if (distance > deviation) { worst = i; deviation = distance; }
+                }
+                if (worst >= 0) throw new NonPlanarPolygonException(worst, deviation);
                 return plane;
             }
             public double SignedDistance(double[] point) { return Dot(Subtract(point, origin), normal); }
@@ -7666,6 +8130,7 @@ namespace SapQuadTransitionPlugin
             private int? progressPercent;
             private int requested, stopped;
             private Form window;
+            private readonly Thread thread;
             public bool Requested { get { return Volatile.Read(ref requested) != 0; } }
 
             public CancellationController(bool italian, Rectangle? anchor = null, IntPtr ownerHandle = default(IntPtr))
@@ -7674,7 +8139,7 @@ namespace SapQuadTransitionPlugin
                 this.anchor = anchor;
                 this.ownerHandle = ownerHandle;
                 progressMessage = italian ? "Preparazione della mesh..." : "Preparing the mesh...";
-                var thread = new Thread(Run);
+                thread = new Thread(Run);
                 thread.IsBackground = true;
                 thread.SetApartmentState(ApartmentState.STA);
                 thread.Start();
@@ -7719,13 +8184,17 @@ namespace SapQuadTransitionPlugin
             {
                 Interlocked.Exchange(ref stopped, 1);
                 Form form = window;
-                if (form == null || !form.IsHandleCreated || form.IsDisposed) return;
-                try { form.BeginInvoke((Action)delegate
+                if (form != null && form.IsHandleCreated && !form.IsDisposed)
+                    try { form.BeginInvoke((Action)delegate
                     {
                         try { if (!form.IsDisposed) form.Close(); }
                         catch (Exception error) { LogPluginException(error); }
                     }); }
-                catch (InvalidOperationException) { }
+                    catch (InvalidOperationException) { }
+                // When a diagnostic modal replaces the wait window, ensure its
+                // independent STA has closed before showing the modal on top.
+                if (form != null && Thread.CurrentThread != thread && !thread.Join(2000))
+                    LogPluginException(new TimeoutException("The MESHing wait window did not close promptly."));
             }
 
             private void Run()
@@ -7851,6 +8320,8 @@ namespace SapQuadTransitionPlugin
                 public string Language { get; set; }
                 public bool? FastMode { get; set; }
                 public bool? CreateBackup { get; set; }
+                public bool? CheckSelectedGeometry { get; set; }
+                public double? CloseJointPercent { get; set; }
                 // Read the two sizes from settings written by earlier versions.
                 public GmshPreviewPanel.Values GmshPreview { get; set; }
             }
@@ -7910,6 +8381,8 @@ namespace SapQuadTransitionPlugin
                     }
                     options.Language = useItalian ? "it" : "en";
                     options.CreateBackup = createBackup.Checked;
+                    options.CheckSelectedGeometry = checkSelectedGeometry.Checked;
+                    options.CloseJointPercent = (double)closeJointPercent.Value;
                     // Persist the generation tab, but never its additional-tab
                     // regular-grid switch (which belongs to this session only).
                     if (validMaximum && validMinimum && minimum < maximum)
@@ -7921,7 +8394,8 @@ namespace SapQuadTransitionPlugin
                     string temporary = OptionsFile + ".tmp";
                     File.WriteAllText(temporary, new JavaScriptSerializer().Serialize(new {
                         options.SizeMeters, options.MinMeters, options.Language,
-                        options.CreateBackup, options.GmshPreview }), Encoding.UTF8);
+                        options.CreateBackup, options.CheckSelectedGeometry,
+                        options.CloseJointPercent, options.GmshPreview }), Encoding.UTF8);
                     if (File.Exists(OptionsFile)) File.Replace(temporary, OptionsFile, null);
                     else File.Move(temporary, OptionsFile);
                 }
@@ -7934,6 +8408,12 @@ namespace SapQuadTransitionPlugin
                 SavedOptions saved = ReadSavedOptions();
                 if (saved == null) return;
                 if (saved.CreateBackup.HasValue) createBackup.Checked = saved.CreateBackup.Value;
+                if (saved.CheckSelectedGeometry.HasValue)
+                    checkSelectedGeometry.Checked = saved.CheckSelectedGeometry.Value;
+                if (saved.CloseJointPercent.HasValue &&
+                    saved.CloseJointPercent.Value >= (double)closeJointPercent.Minimum &&
+                    saved.CloseJointPercent.Value <= (double)closeJointPercent.Maximum)
+                    closeJointPercent.Value = (decimal)saved.CloseJointPercent.Value;
                 if (gmshPreviewOptions != null)
                 {
                     if (saved.GmshPreview != null)
@@ -7976,6 +8456,11 @@ namespace SapQuadTransitionPlugin
             private readonly CheckBox fastMode = new CheckBox();
             private readonly CheckBox createBackup = new CheckBox();
             private readonly Label createBackupDescription = new Label();
+            private readonly CheckBox checkSelectedGeometry = new CheckBox();
+            private readonly Label geometryCheckDescription = new Label();
+            private readonly Label closeJointPercentLabel = new Label();
+            private readonly NumericUpDown closeJointPercent = new NumericUpDown();
+            private readonly Label geometryCheckHint = new Label();
             private readonly CheckBox useMaximumCores = new CheckBox();
             private readonly NumericUpDown workerLimit = new NumericUpDown();
             private readonly Label status = new Label();
@@ -8226,6 +8711,18 @@ namespace SapQuadTransitionPlugin
                 cancellationController = null;
                 if (active != null) active.Stop();
             }
+            public void PauseProgressForDiagnostic()
+            {
+                ThrowIfCancellationRequested();
+                StopCancellationController();
+                ThrowIfCancellationRequested();
+            }
+            public void ResumeProgressAfterDiagnostic()
+            {
+                ThrowIfCancellationRequested();
+                if (working && cancellationController == null)
+                    cancellationController = new CancellationController(useItalian, Bounds, Handle);
+            }
             private bool checkingUpdates;
             private bool modelLockWarningShown;
             private bool requiresSavedModel;
@@ -8265,6 +8762,8 @@ namespace SapQuadTransitionPlugin
             public bool StructuredSectorBands { get { return structuredSectorBands.Checked; } }
             public bool FastMode { get { return fastMode.Checked; } }
             public bool CreateBackup { get { return createBackup.Checked; } }
+            public bool CheckSelectedGeometry { get { return checkSelectedGeometry.Checked; } }
+            public double CloseJointPercent { get { return (double)closeJointPercent.Value; } }
             public bool PreserveSelectedBoundaryEdges { get { return gmshPreserveSelectedEdges.Checked; } }
             public int GmshMaximumSizeTolerancePercent { get { return 20; } }
             public int CandidateWorkers { get { return useMaximumCores.Checked ? Environment.ProcessorCount : (int)workerLimit.Value; } }
@@ -8631,15 +9130,15 @@ namespace SapQuadTransitionPlugin
             public void UpdateOversizedSelection(int areas, int frames, int links, int joints, int limit)
             {
                 if (!CanRefreshSelection) return;
-                hasSelectedAreas = false;
+                hasSelectedAreas = areas > 0;
                 SetSelectionCounts(areas, 0, 0, 0, frames, links, joints);
                 UpdateOptionState();
-                generate.Enabled = false;
+                generate.Enabled = hasSelectedAreas && !requiresSavedModel;
                 status.Text = L(
-                    "Select All contains " + areas + " areas. Select up to " + limit +
-                    " source areas to mesh; geometry inspection is paused for this selection.",
-                    "Seleziona tutto contiene " + areas + " aree. Selezionare fino a " + limit +
-                    " aree sorgente da meshare; l'analisi geometrica e sospesa per questa selezione.");
+                    "Select All contains " + areas + " areas. Generate checks the selection; " +
+                    "select at most " + limit + " areas for meshing.",
+                    "Seleziona tutto contiene " + areas + " aree. Genera controlla la selezione; " +
+                    "per meshare selezionare al massimo " + limit + " aree.");
             }
             public void UpdateLiveSelection(int areas, int quads, int triangles, int polygons,
                 int frames, int links, int joints, bool containsFrameConstraints,
@@ -8721,6 +9220,100 @@ namespace SapQuadTransitionPlugin
             private DialogResult ShowHostDialog(Form form)
             {
                 return ShowHostModal(Handle, viewportWindow, () => form.ShowDialog(this));
+            }
+            public DialogResult ConfirmCloseInputJoints(List<CloseInputJoint> pairs, double limit, bool automated)
+            {
+                if (pairs.Count == 0) return DialogResult.Yes;
+                if (automated)
+                {
+                    Console.WriteLine("mesh-stage=close-input-joints count=" + pairs.Count +
+                        " threshold=" + limit.ToString("G9", CultureInfo.InvariantCulture));
+                    return DialogResult.Yes;
+                }
+                using (var warning = new Form())
+                {
+                    warning.Text = L("Check closely spaced model joints", "Controllare i nodi del modello troppo vicini");
+                    warning.ClientSize = new Size(1100, 590);
+                    warning.MinimumSize = new Size(820, 400);
+                    warning.Font = Font; warning.BackColor = Color.White;
+                    warning.StartPosition = FormStartPosition.CenterParent;
+                    warning.ShowInTaskbar = false;
+                    ApplyPluginIcon(warning);
+                    var description = new Label { Left = 16, Top = 14, Width = 1068, Height = 110,
+                        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                        Text = L("The model has joints closer than " +
+                            CloseJointPercent.ToString("0.#", CultureInfo.CurrentCulture) +
+                            "% of the requested maximum mesh size (" +
+                            limit.ToString("G6", CultureInfo.CurrentCulture) + " " + LengthUnit +
+                            "). Check their positions and connections in the original model. " +
+                            "Such small gaps can produce nearly collinear triangles. Inspect the joints and, if they " +
+                            "are unintended, join them by correcting the original geometry. Select rows and press Ctrl+C " +
+                            "to copy them, or select the listed joints in the model to inspect them. " +
+                            "Selecting joints closes MESHing so you can edit the source geometry.",
+                            "Il modello contiene nodi distanti meno del " +
+                            CloseJointPercent.ToString("0.#", CultureInfo.CurrentCulture) +
+                            "% della dimensione massima richiesta (" +
+                            limit.ToString("G6", CultureInfo.CurrentCulture) + " " + LengthUnit +
+                            "). Controllare posizione e connessioni nel modello originale: queste distanze " +
+                            "possono generare triangoli quasi allineati. Esaminare i nodi e, se non sono intenzionali, " +
+                            "unirli correggendo la geometria di partenza. Selezionare le righe e premere Ctrl+C " +
+                            "per copiarle, oppure selezionare i nodi elencati nel modello per esaminarli. " +
+                            "Seleziona i nodi chiude MESHing per consentire la modifica della geometria.") };
+                    warning.Controls.Add(description);
+                    var grid = new DataGridView { Left = 16, Top = 124, Width = 1068, Height = 382,
+                        Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                        ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+                        AllowUserToResizeRows = false, MultiSelect = true,
+                        SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                        ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText,
+                        RowHeadersVisible = false, AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill };
+                    foreach (string title in new[] { L("Area", "Area"), L("Joint A", "Nodo A"),
+                        L("Joint B", "Nodo B"), L("Distance", "Distanza"),
+                        "X A", "Y A", "Z A", "X B", "Y B", "Z B" })
+                        grid.Columns.Add(title, title);
+                    foreach (CloseInputJoint pair in pairs)
+                        grid.Rows.Add(pair.Area, pair.FirstName, pair.SecondName,
+                            pair.Distance.ToString("G10", CultureInfo.CurrentCulture),
+                            pair.First[0].ToString("G10", CultureInfo.CurrentCulture),
+                            pair.First[1].ToString("G10", CultureInfo.CurrentCulture),
+                            pair.First[2].ToString("G10", CultureInfo.CurrentCulture),
+                            pair.Second[0].ToString("G10", CultureInfo.CurrentCulture),
+                            pair.Second[1].ToString("G10", CultureInfo.CurrentCulture),
+                            pair.Second[2].ToString("G10", CultureInfo.CurrentCulture));
+                    grid.ClearSelection();
+                    warning.Controls.Add(grid);
+                    var count = new Label { Left = 16, Top = 518, Width = 550, Height = 30,
+                        Anchor = AnchorStyles.Bottom | AnchorStyles.Left,
+                        Text = pairs.Count == 200
+                            ? L("At least 200 pairs found; first 200 shown.", "Almeno 200 coppie: mostrate le prime 200.")
+                            : L("Pairs to check: ", "Coppie da controllare: ") + pairs.Count };
+                    warning.Controls.Add(count);
+                    var cancel = new Button { Width = 150, Height = 30, Left = 588, Top = 537,
+                        Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                        Text = L("Back to MESHing", "Torna a MESHing"), DialogResult = DialogResult.Cancel };
+                    var select = new Button { Width = 160, Height = 30, Left = 746, Top = 537,
+                        Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                        Text = L("Select joints", "Seleziona i nodi"), DialogResult = DialogResult.Retry };
+                    var proceed = new Button { Width = 170, Height = 30, Left = 914, Top = 537,
+                        Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                        Text = L("Continue anyway", "Continua comunque"), DialogResult = DialogResult.Yes };
+                    StyleButton(cancel, false); StyleButton(select, true); StyleButton(proceed, false);
+                    warning.Controls.Add(cancel); warning.Controls.Add(select); warning.Controls.Add(proceed);
+                    warning.AcceptButton = cancel; warning.CancelButton = cancel;
+                    return ShowHostDialog(warning);
+                }
+            }
+            public void DeclineCloseJointPreflight()
+            {
+                regionalSignature = null;
+                StartRequested = false;
+                status.Text = L("Review the listed model joints before generating the mesh.",
+                    "Controllare i nodi del modello elencati prima di generare la mesh.");
+            }
+            public void ShowSelectionLimit(int limit)
+            {
+                status.Text = L("Diagnostics completed. Select at most " + limit + " source areas to mesh.",
+                    "Controlli completati. Per meshare selezionare al massimo " + limit + " aree sorgente.");
             }
             public void ReportModelLockViolation(string diagnostic)
             { ReportModelLockViolation(diagnostic, null); }
@@ -9004,6 +9597,13 @@ namespace SapQuadTransitionPlugin
                 workerLimit.Value = Math.Min(2, workerLimit.Maximum); workerLimit.Enabled = false;
                 createBackup.Left = 20; createBackup.Top = 547; createBackup.Width = 530;
                 createBackup.Checked = true; createBackup.FlatStyle = FlatStyle.Standard; Controls.Add(createBackup);
+                checkSelectedGeometry.Checked = true;
+                checkSelectedGeometry.FlatStyle = FlatStyle.Standard;
+                closeJointPercent.DecimalPlaces = 1;
+                closeJointPercent.Minimum = .1m;
+                closeJointPercent.Maximum = 100m;
+                closeJointPercent.Increment = .5m;
+                closeJointPercent.Value = 5m;
 
                 status.Left = 20; status.Top = 606; status.Width = 530; status.Height = 54; status.Text = "Ready."; status.ForeColor = UiBody; Controls.Add(status);
                 elapsedTimer.Interval = 1000;
@@ -9408,6 +10008,24 @@ namespace SapQuadTransitionPlugin
                 createBackupDescription.TextAlign = ContentAlignment.TopLeft;
                 createBackupDescription.Cursor = Cursors.Hand;
                 createBackupDescription.Click += delegate { if (createBackup.Enabled) createBackup.Checked = !createBackup.Checked; };
+                gmshSapTab.Controls.Add(checkSelectedGeometry);
+                checkSelectedGeometry.SetBounds(12, 160, 18, 28);
+                gmshSapTab.Controls.Add(geometryCheckDescription);
+                geometryCheckDescription.SetBounds(32, 165, 465, 64);
+                geometryCheckDescription.Cursor = Cursors.Hand;
+                geometryCheckDescription.Click += delegate {
+                    if (checkSelectedGeometry.Enabled) checkSelectedGeometry.Checked = !checkSelectedGeometry.Checked;
+                };
+                gmshSapTab.Controls.Add(closeJointPercentLabel);
+                closeJointPercentLabel.SetBounds(32, 243, 355, 24);
+                gmshSapTab.Controls.Add(closeJointPercent);
+                closeJointPercent.SetBounds(396, 239, 96, 26);
+                gmshSapTab.Controls.Add(geometryCheckHint);
+                geometryCheckHint.SetBounds(32, 284, 465, 72);
+                checkSelectedGeometry.CheckedChanged += delegate {
+                    closeJointPercent.Enabled = checkSelectedGeometry.Checked && !working && !requiresSavedModel;
+                    closeJointPercentLabel.Enabled = closeJointPercent.Enabled;
+                };
 
                 gmshResetDefault.Click += delegate { ResetGmshOptions(); };
                 StyleButton(gmshResetDefault, false);
@@ -9470,6 +10088,8 @@ namespace SapQuadTransitionPlugin
                 structuredSectorBands.Checked = true;
                 fastMode.Checked = true;
                 createBackup.Checked = true;
+                checkSelectedGeometry.Checked = true;
+                closeJointPercent.Value = 5m;
                 useMaximumCores.Checked = true;
                 workerLimit.Value = Math.Min(2, workerLimit.Maximum);
                 UpdateOptionState();
@@ -9492,9 +10112,9 @@ namespace SapQuadTransitionPlugin
                 measurementToolTip.SetToolTip(gmshPreserveSelectedEdges, L(
                     "Preserve the intervals between explicitly selected SAP2000 joints on area edges. Other edges may still be subdivided; a protected interval can exceed the nominal mesh size.",
                     "Mantiene gli intervalli fra nodi SAP2000 esplicitamente selezionati sui bordi delle aree. Gli altri bordi possono essere suddivisi; un tratto protetto può superare la dimensione nominale."));
-                gmshHolesTab.Text = L("Additional options", "Opzioni aggiuntive");
+                gmshHolesTab.Text = L("Additional meshing options", "Opzioni aggiuntive di meshatura");
                 gmshAdvancedTab.Text = L("Gmsh JSON", "JSON Gmsh");
-                gmshSapTab.Text = L("Backup options", "Opzioni di backup");
+                gmshSapTab.Text = L("General options", "Opzioni generali");
                 generateCircularHoles.Text = L("Create circular holes around this group of joints",
                     "Crea fori circolari ai nodi SAP2000 del gruppo");
                 holeGroupLabel.Text = L("Group", "Gruppo");
@@ -9779,6 +10399,23 @@ namespace SapQuadTransitionPlugin
                 }
                 fastMode.Checked = Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_FAST") == "1";
                 createBackup.Checked = Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_BACKUP") == "1";
+                string diagnosticCheck = Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_CHECK_SELECTED_GEOMETRY");
+                if (diagnosticCheck != null)
+                {
+                    if (diagnosticCheck != "0" && diagnosticCheck != "1")
+                        throw new InvalidOperationException("Invalid automated geometry-check setting.");
+                    checkSelectedGeometry.Checked = diagnosticCheck == "1";
+                }
+                string closePercentText = Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_CLOSE_JOINT_PERCENT");
+                if (!string.IsNullOrEmpty(closePercentText))
+                {
+                    decimal percent;
+                    if (!decimal.TryParse(closePercentText, NumberStyles.AllowDecimalPoint,
+                            CultureInfo.InvariantCulture, out percent) ||
+                        percent < closeJointPercent.Minimum || percent > closeJointPercent.Maximum)
+                        throw new InvalidOperationException("Invalid automated close-joint percentage.");
+                    closeJointPercent.Value = percent;
+                }
                 if (Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_REGULAR") == "1") preferRegular.Checked = true;
                 if (Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_REFINED") == "1") stressRefinement.Checked = true;
                 string workers = Environment.GetEnvironmentVariable("SAP_QUAD_ATOMIC_WORKERS");
@@ -9940,6 +10577,20 @@ namespace SapQuadTransitionPlugin
                 createBackup.AccessibleName = createBackupDescription.Text;
                 measurementToolTip.SetToolTip(createBackup, createBackupDescription.Text);
                 measurementToolTip.SetToolTip(createBackupDescription, measurementToolTip.GetToolTip(createBackup));
+                geometryCheckDescription.Text = L(
+                    "Before meshing, check the selected areas for non-planarity and the selected joints for close pairs.",
+                    "Prima della meshatura controlla le aree selezionate non piane e le coppie di nodi selezionati troppo vicini.");
+                closeJointPercentLabel.Text = L("Close-joint threshold (% of max mesh size)",
+                    "Soglia nodi vicini (% della dimensione massima)");
+                geometryCheckHint.Text = L(
+                    "Recommended: keep this check enabled. Disabling it skips only the initial diagnostic; " +
+                    "Gmsh mesh validity and near-collinear triangle checks remain mandatory before SAP import.",
+                    "Consigliato: lasciare attivo il controllo. Disattivarlo salta solo la diagnostica iniziale; " +
+                    "le verifiche della mesh Gmsh e dei triangoli quasi allineati restano obbligatorie prima dell'import SAP.");
+                measurementToolTip.SetToolTip(checkSelectedGeometry, geometryCheckHint.Text);
+                measurementToolTip.SetToolTip(closeJointPercent, L(
+                    "Pairs closer than this percentage of the requested maximum mesh size are listed before meshing. Default: 5%.",
+                    "Prima della meshatura elenca le coppie più vicine di questa percentuale del passo massimo richiesto. Default: 5%."));
                 ApplySelectionSummary();
                 UpdateCreatedElements();
                 generate.Text = L("Generate", "Genera");
@@ -9982,6 +10633,10 @@ namespace SapQuadTransitionPlugin
                     useMaximumCores.Enabled = workerLimit.Enabled = generate.Enabled = false;
                     createBackup.Enabled = !requiresSavedModel;
                     createBackupDescription.Enabled = !requiresSavedModel;
+                    checkSelectedGeometry.Enabled = !requiresSavedModel;
+                    geometryCheckDescription.Enabled = !requiresSavedModel;
+                    closeJointPercent.Enabled = checkSelectedGeometry.Checked && !requiresSavedModel;
+                    closeJointPercentLabel.Enabled = closeJointPercent.Enabled;
                     return;
                 }
                 generate.Enabled = !requiresSavedModel && (qualityReport == null || Applied);
@@ -10006,6 +10661,9 @@ namespace SapQuadTransitionPlugin
                 workerLimit.Enabled = !useMaximumCores.Checked;
                 createBackup.Enabled = true;
                 createBackupDescription.Enabled = true;
+                checkSelectedGeometry.Enabled = geometryCheckDescription.Enabled = true;
+                closeJointPercent.Enabled = checkSelectedGeometry.Checked;
+                closeJointPercentLabel.Enabled = closeJointPercent.Enabled;
             }
             public void BeginWork(string text)
             {
@@ -10036,6 +10694,8 @@ namespace SapQuadTransitionPlugin
                 useMaximumCores.Enabled = workerLimit.Enabled = false;
                 createBackup.Enabled = false;
                 createBackupDescription.Enabled = false;
+                checkSelectedGeometry.Enabled = geometryCheckDescription.Enabled = false;
+                closeJointPercent.Enabled = closeJointPercentLabel.Enabled = false;
                 gmshPreviewTabs.Enabled = false;
                 gmshResetDefault.Enabled = false;
                 language.Enabled = false;

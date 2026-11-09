@@ -97,6 +97,12 @@ def main():
                      int.from_bytes(raw[20:24], 'big') < 760 or
                      hashlib.sha256(raw).digest() == hashlib.sha256(old_image.read_bytes()).digest()):
                 raise ValueError(name + ': missing or invalid current-interface screenshot ' + tab)
+        general_image = HELP / 'assets' / f'interface-v318-{language}-general.png'
+        general_raw = general_image.read_bytes()
+        if (text.count(general_image.name) != 2 or general_raw[:8] != b'\x89PNG\r\n\x1a\n' or
+                int.from_bytes(general_raw[16:20], 'big') < 550 or
+                int.from_bytes(general_raw[20:24], 'big') < 760):
+            raise ValueError(name + ': missing General options screenshot')
         if (text.count('FEMesh') != 1 or
                 name.endswith('-en.html') and 'historical' not in text or
                 name.endswith('-it.html') and 'storiche' not in text):
@@ -106,7 +112,7 @@ def main():
             raise ValueError(name + ': missing MESHing help logo or accessible description')
         if 'in preparation' in text.lower() or 'in preparazione' in text.lower():
             raise ValueError(name + ': incomplete candidate help')
-        for marker in ((('MESHing version · 3.0.15' if name.endswith('-en.html') else 'Versione MESHing · 3.0.15'), 'leonardo@csi-italia.eu', 'Mesh.MeshSizeMin', 'Mesh.Smoothing', 'Mesh.AlgorithmSwitchOnFailure',
+        for marker in ((('MESHing version · 3.0.18' if name.endswith('-en.html') else 'Versione MESHing · 3.0.18'), 'leonardo@csi-italia.eu', 'Mesh.MeshSizeMin', 'Mesh.Smoothing', 'Mesh.AlgorithmSwitchOnFailure',
                           'https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist',
                           'https://gmsh.info/', 'C. Geuzaine', 'J.-F. Remacle',
                           'Gmsh attribution.' if name.endswith('-en.html') else 'Attribuzione Gmsh.',
@@ -115,9 +121,12 @@ def main():
                           'Mesh.QuadqsSizemapMethod', 'Mesh.RecombineNodeRepositioning',
                           'Mesh.RecombineOptimizeTopology',
                           'Prefer regular (grid-aligned) mesh when possible' if name.endswith('-en.html') else 'Preferisci mesh regolari allineate alla griglia',
-                                '<footer><small>Version: <strong>3.0.15</strong></small>' if name.endswith('-en.html') else '<footer><small>Versione: <strong>3.0.15</strong></small>',
-                          'Additional options' if name.endswith('-en.html') else 'Opzioni aggiuntive',
-                           'Backup options' if name.endswith('-en.html') else 'Opzioni di backup',
+                                '<footer><small>Version: <strong>3.0.18</strong></small>' if name.endswith('-en.html') else '<footer><small>Versione: <strong>3.0.18</strong></small>',
+                           'Additional meshing options' if name.endswith('-en.html') else 'Opzioni aggiuntive di meshatura',
+                            'General options' if name.endswith('-en.html') else 'Opzioni generali',
+                            'Check selected objects before meshing' if name.endswith('-en.html') else 'Controlla gli oggetti selezionati prima della meshatura',
+                            '600 mm' if name.endswith('-en.html') else '600 mm',
+                            'before FAST import' if name.endswith('-en.html') else 'prima dell’importazione FAST',
                            'disabled numbered backups' if name.endswith('-en.html') else 'backup disattivato',
                            'Do not show this warning again in this session' if name.endswith('-en.html') else 'Non mostrare più questo avviso in questa sessione',
                            'Closing MESHing' if name.endswith('-en.html') else 'Chiudendo MESHing')
