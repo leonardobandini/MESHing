@@ -3,7 +3,23 @@
 Leggere questo file all'inizio della prossima sessione; verificare sempre lo
 stato corrente di Git/GitHub prima di agire, perché può essere cambiato.
 
-## Stato corrente: MESHing 3.0.15 pubblicata come Latest
+## Stato corrente: MESHing 3.0.18 pubblicata come Latest
+
+- Release: https://github.com/leonardobandini/MESHing/releases/tag/v3.0.18
+- Tag annotato `v3.0.18` sul commit
+  `c07a5b023c1ccfeac94ab7814c3fd2ebf5464c2e`; autore, committer e
+  tagger con identita' GitHub richiesta. Dieci asset GitHub con digest SHA-256
+  identici ai dieci asset locali in `artifacts/candidate-v3.0.18/`.
+  Installer e alias Latest identici:
+  `31df249ae82e5f2527285a6eee82b581e3cba30fd35848d7e7dc6df33fd27587`;
+  ZIP sorgenti `00a0955448e6ebbf291871bfbeaee744e986ff98b91d9d57c94f6c7af88905bc`.
+- Sulla DLL del pacchetto finale: **36/36 SAP + 36/36 Bridge PASS** (matrice
+  completata riprendendo i casi non conclusi al primo tentativo); suite Python
+  36 test, 1 skip; help IT/EN PASS, asset ZIP PASS. La prova Undo mirata
+  3/3 per host appartiene alla precedente DLL della stessa candidata 3.0.18.
+  GitHub API Latest conferma tag 3.0.18, release non draft e non prerelease.
+
+## Stato storico: MESHing 3.0.15
 
 - Release: https://github.com/leonardobandini/MESHing/releases/tag/v3.0.15
 - Tag annotato `v3.0.15` sul commit `a4109191793ef0d6e937ada03691a0b74fc42a6a`,
@@ -237,7 +253,7 @@ stato corrente di Git/GitHub prima di agire, perché può essere cambiato.
   `5b3da022d6e1b255e6c0bb7acbd2bda243d8720210c13709b237782451294b9c`.
   Sorgenti ZIP SHA-256
   `609b1037005587695edf8c630f925fe8fa52eb8ed8155dee971bc8a0cf6e92cb`.
-  La candidata **non e' pubblicata** e non sostituisce il tag pubblico.
+  Questa era la situazione precedente alla pubblicazione.
 - Candidata installata localmente dallo ZIP versionato e verificata contro
   DLL, backend binario/script, help e registrazione COM. Il backend installato
   dichiara 3.0.18. Copia di rollback 3.0.17 in
@@ -261,8 +277,8 @@ stato corrente di Git/GitHub prima di agire, perché può essere cambiato.
   hanno entrambe bloccato il triangolo quasi allineato prima di FAST,
   come atteso. La mesh di quel modello non e' stata importata.
 - Risultati, limitazioni e percorsi delle tracce in
-  `docs/MESHING_3_0_18_REGRESSION_LOCAL.md`. La candidata e' ancora **solo
-  locale e non pubblicata**; attendere istruzioni dell'utente per il rilascio.
+  `docs/MESHING_3_0_18_REGRESSION_LOCAL.md`. Queste prove si riferiscono
+  alla prima DLL della candidata, precedente al pacchetto finale.
 
 ## Preparazione rilascio 3.0.18 (9 novembre 2026)
 
@@ -276,3 +292,6 @@ stato corrente di Git/GitHub prima di agire, perché può essere cambiato.
   ripresi e completati i casi mancanti in istanze isolate. Sommari e log
   complessivi: **36/36 SAP + 36/36 Bridge PASS** sulla DLL finale. Dettagli
   in `docs/MESHING_3_0_18_REGRESSION_LOCAL.md`.
+- Commit, tag, push e release GitHub eseguiti. La release 3.0.18 e' Latest
+  con dieci asset verificati; ZIP sorgenti SHA-256 definitivo
+  `00a0955448e6ebbf291871bfbeaee744e986ff98b91d9d57c94f6c7af88905bc`.
