@@ -39,7 +39,7 @@ namespace SapQuadTransitionPlugin
         private const int AreaObjectType = 5;
         private const int SolidObjectType = 6;
         private const int LinkObjectType = 7;
-        private const string PluginVersion = "3.0.18";
+        private const string PluginVersion = "3.0.19";
         private const string WindowTitle = "MESHing " + PluginVersion;
         private const string UpdateManifestUrl = "https://api.github.com/repos/leonardobandini/MESHing/releases/latest";
         private const string LatestDownloadUrl = "https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip";
@@ -577,6 +577,12 @@ namespace SapQuadTransitionPlugin
             return name.ToString();
         }
 
+        private static bool IsSapCompletionMessage(string text)
+        {
+            return text == "Plugin completed successfully." ||
+                text == "Plugin completato correttamente.";
+        }
+
         private static bool TryDismissSapCompletion(int processId)
         {
             bool dismissed = false;
@@ -596,7 +602,7 @@ namespace SapQuadTransitionPlugin
                         {
                             string text = WindowText(child);
                             string kind = WindowClass(child);
-                            if (kind == "Static" && text == "Plugin completed successfully.") exactMessage = true;
+                            if (kind == "Static" && IsSapCompletionMessage(text)) exactMessage = true;
                             if (kind == "Button" && text == "OK") ok = child;
                         }
                         catch (Exception error) { LogPluginException(error); }
@@ -8320,6 +8326,7 @@ namespace SapQuadTransitionPlugin
                 public string Language { get; set; }
                 public bool? FastMode { get; set; }
                 public bool? CreateBackup { get; set; }
+                public bool? SkipGenerateBackupWarning { get; set; }
                 public bool? CheckSelectedGeometry { get; set; }
                 public double? CloseJointPercent { get; set; }
                 // Read the two sizes from settings written by earlier versions.
@@ -8381,6 +8388,7 @@ namespace SapQuadTransitionPlugin
                     }
                     options.Language = useItalian ? "it" : "en";
                     options.CreateBackup = createBackup.Checked;
+                    options.SkipGenerateBackupWarning = skipGenerateBackupWarning;
                     options.CheckSelectedGeometry = checkSelectedGeometry.Checked;
                     options.CloseJointPercent = (double)closeJointPercent.Value;
                     // Persist the generation tab, but never its additional-tab
@@ -8394,7 +8402,7 @@ namespace SapQuadTransitionPlugin
                     string temporary = OptionsFile + ".tmp";
                     File.WriteAllText(temporary, new JavaScriptSerializer().Serialize(new {
                         options.SizeMeters, options.MinMeters, options.Language,
-                        options.CreateBackup, options.CheckSelectedGeometry,
+                        options.CreateBackup, options.SkipGenerateBackupWarning, options.CheckSelectedGeometry,
                         options.CloseJointPercent, options.GmshPreview }), Encoding.UTF8);
                     if (File.Exists(OptionsFile)) File.Replace(temporary, OptionsFile, null);
                     else File.Move(temporary, OptionsFile);
@@ -8408,6 +8416,7 @@ namespace SapQuadTransitionPlugin
                 SavedOptions saved = ReadSavedOptions();
                 if (saved == null) return;
                 if (saved.CreateBackup.HasValue) createBackup.Checked = saved.CreateBackup.Value;
+                skipGenerateBackupWarning = saved.SkipGenerateBackupWarning ?? false;
                 if (saved.CheckSelectedGeometry.HasValue)
                     checkSelectedGeometry.Checked = saved.CheckSelectedGeometry.Value;
                 if (saved.CloseJointPercent.HasValue &&
@@ -10088,6 +10097,7 @@ namespace SapQuadTransitionPlugin
                 structuredSectorBands.Checked = true;
                 fastMode.Checked = true;
                 createBackup.Checked = true;
+                skipGenerateBackupWarning = false;
                 checkSelectedGeometry.Checked = true;
                 closeJointPercent.Value = 5m;
                 useMaximumCores.Checked = true;
