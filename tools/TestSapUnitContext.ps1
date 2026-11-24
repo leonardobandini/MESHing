@@ -4,24 +4,25 @@ $ErrorActionPreference = 'Stop'
 $api = 'C:\Program Files\Computers and Structures\SAP2000 27\CSiAPIv1.dll'
 [Reflection.Assembly]::LoadFrom($api) | Out-Null
 $assembly = [Reflection.Assembly]::LoadFrom((Resolve-Path -LiteralPath $DllPath).Path)
-$plugin = $assembly.GetType('SapQuadTransitionPlugin.cPlugin')
-$method = $plugin.GetMethod('RequiresDatabaseUnitScope', [Reflection.BindingFlags]'NonPublic,Static')
-if ($null -eq $method) { throw 'Unit-context decision method not found.' }
-
-$mm = [CSiAPIv1.eUnits]::kN_mm_C
-$m = [CSiAPIv1.eUnits]::kN_m_C
+$plugin = $assembly.GetType('SapQuadTransitionPlugin.cPlugin', $true)
+if ($null -ne $plugin.GetMethod('RequiresDatabaseUnitScope', [Reflection.BindingFlags]'NonPublic,Static')) {
+    throw 'Model-wide unit normalization must not be present.'
+}
+$snapshot = $assembly.GetType('SapQuadTransitionPlugin.ModelCsvSnapshot', $true)
+$method = $snapshot.GetMethod('ConvertSnapshotTemperature', [Reflection.BindingFlags]'NonPublic,Static')
+if ($null -eq $method) { throw 'Temperature conversion method not found.' }
+$c = [CSiAPIv1.eTemperature]::C
+$f = [CSiAPIv1.eTemperature]::F
 $cases = @(
-    @('27.1.0', 27.1, $m, $mm, $false),
-    @('27.2.0', 27.2, $mm, $mm, $false),
-    @('27.2.0', 27.2, $m, $mm, $true),
-    @('27.10.0', 27.1, $m, $mm, $true),
-    @('28.0.0', 28.0, $m, $mm, $true),
-    @('', 27.2, $m, $mm, $true)
+    @(26.5, $c, $c, 26.5),
+    @(26.5, $f, $f, 26.5),
+    @(-3.0555555555555554, $c, $f, 26.5),
+    @(26.5, $f, $c, -3.0555555555555554)
 )
 foreach ($case in $cases) {
-    $actual = [bool]$method.Invoke($null, [object[]]@($case[0], $case[1], $case[2], $case[3]))
-    if ($actual -ne $case[4]) {
-        throw "Unexpected unit scope for SAP $($case[0]), present=$($case[2]), database=$($case[3]): $actual"
+    $actual = [double]$method.Invoke($null, [object[]]@($case[0], $case[1], $case[2]))
+    if ([math]::Abs($actual - [double]$case[3]) -gt 1e-9) {
+        throw "Incorrect temperature conversion from $($case[1]) to $($case[2]): $actual"
     }
 }
-Write-Host 'SAP unit-context policy: pre-27.2 compatibility and 27.2+ normalization PASS'
+Write-Host 'SAP_UNITS_NO_GLOBAL_SCOPE_AND_TEMPERATURE_CONVERSION=PASS'

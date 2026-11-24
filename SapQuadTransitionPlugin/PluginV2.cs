@@ -39,7 +39,7 @@ namespace SapQuadTransitionPlugin
         private const int AreaObjectType = 5;
         private const int SolidObjectType = 6;
         private const int LinkObjectType = 7;
-        private const string PluginVersion = "3.0.19";
+        private const string PluginVersion = "3.0.21";
         private const string WindowTitle = "MESHing " + PluginVersion;
         private const string UpdateManifestUrl = "https://api.github.com/repos/leonardobandini/MESHing/releases/latest";
         private const string LatestDownloadUrl = "https://github.com/leonardobandini/MESHing/releases/latest/download/MESHing-latest.zip";
@@ -779,55 +779,9 @@ namespace SapQuadTransitionPlugin
         {
             useItalian = MeshOptionsDialog.InitialItalian();
             if (HostRegionalSettingsChanged()) throw new HostRegionalSettingsChangedException();
-            eUnits originalUnits = model.GetPresentUnits();
-            eUnits databaseUnits = model.GetDatabaseUnits();
-            string versionText = "";
-            double versionNumber = 0;
-            bool normalizeUnits = model.GetVersion(ref versionText, ref versionNumber) == 0 &&
-                RequiresDatabaseUnitScope(versionText, versionNumber, originalUnits, databaseUnits);
-            eUnits unitsToRestore = originalUnits;
-            bool restoreScopedUnits = normalizeUnits;
-            if (normalizeUnits)
-            {
-                Check(model.SetPresentUnits(databaseUnits), "setting deterministic API units", "cSapModel.SetPresentUnits");
-                Console.WriteLine("mesh-units=database sap=" + versionText + " original=" + originalUnits +
-                    " effective=" + databaseUnits);
-            }
-            Action scopeNewModelUnits = delegate
-            {
-                // An SDB opened while the modeless dialog is active has its own
-                // present/database units. Never restore the first model's units
-                // onto the second model when this dialog eventually closes.
-                eUnits present = model.GetPresentUnits();
-                eUnits database = model.GetDatabaseUnits();
-                string sapVersion = "";
-                double sapVersionNumber = 0;
-                bool required = model.GetVersion(ref sapVersion, ref sapVersionNumber) == 0 &&
-                    RequiresDatabaseUnitScope(sapVersion, sapVersionNumber, present, database);
-                unitsToRestore = present;
-                restoreScopedUnits = required;
-                if (required)
-                    Check(model.SetPresentUnits(database), "setting new SAP2000 model database units", "cSapModel.SetPresentUnits");
-            };
-            try { RunWithUnitContext(model, scopeNewModelUnits); }
-            finally
-            {
-                if (restoreScopedUnits)
-                {
-                    Check(model.SetPresentUnits(unitsToRestore), "restoring SAP2000 present units", "cSapModel.SetPresentUnits");
-                    Console.WriteLine("mesh-units-restored=" + unitsToRestore);
-                }
-            }
-        }
-
-        private static bool RequiresDatabaseUnitScope(string versionText, double versionNumber,
-            eUnits presentUnits, eUnits databaseUnits)
-        {
-            Version version;
-            bool contextDependent = Version.TryParse(versionText, out version)
-                ? version.CompareTo(new Version(27, 2)) >= 0
-                : versionNumber >= 27.2 - 1e-9;
-            return contextDependent && presentUnits != databaseUnits;
+            // Use the current model's present units consistently, including
+            // after a model switch. Never change the host's unit selection.
+            RunWithUnitContext(model, delegate { });
         }
 
         private sealed class LiveSelection
@@ -5317,12 +5271,13 @@ namespace SapQuadTransitionPlugin
         {
             string version = "";
             double number = 0;
-            // The trimmed continuation round trip is verified on SAP2000
-            // 27.1.0. Other hosts/versions fail the FAST preflight without
-            // silently changing insertion mode.
-            return (HostProductName() == "SAP2000" || HostProductName() == "CSiBridge") &&
-                model.GetVersion(ref version, ref number) == 0 &&
-                version.StartsWith("27.1.", StringComparison.Ordinal);
+            // SAP2000 28.0 beta also passed isolated polygon round-trip and
+            // FAST insertion tests. This does not extend support to Bridge 28.
+            string host = HostProductName();
+            return model.GetVersion(ref version, ref number) == 0 &&
+                ((host == "SAP2000" || host == "CSiBridge") &&
+                    version.StartsWith("27.1.", StringComparison.Ordinal) ||
+                 host == "SAP2000" && version.StartsWith("28.0.", StringComparison.Ordinal));
         }
 
         private static string CsvCell(string value)
@@ -5518,7 +5473,7 @@ namespace SapQuadTransitionPlugin
             string[] fields = null, data = null;
             Check(model.DatabaseTables.GetTableForEditingArray(key, "", ref version, ref fields, ref records, ref data), "reading table " + key, "DatabaseTables.GetTableForEditingArray");
             if (fields != null && fields.Any(string.IsNullOrWhiteSpace))
-                fields = ModelCsvSnapshot.RecoverFieldKeys(model, key, version, records, data, fields.Length);
+                throw new InvalidDataException("SAP2000 returned blank editing field keys for " + key + ".");
             return new EditableTable(key, version, fields ?? new string[0], data ?? new string[0]);
         }
 
@@ -5537,10 +5492,7 @@ namespace SapQuadTransitionPlugin
 
         private static bool SupportsFastTableInsertion(cSapModel model)
         {
-            // SAP 27.2 can return valid editing values with every FieldKey blank.
-            // Use the same CSV/metadata-verified recovery as the actual FAST
-            // reader; raw keys alone are not evidence that editable tables are
-            // unavailable. Reject incomplete schemas before touching the model.
+            // Reject incomplete schemas before touching the model.
             EditableTable joints = ReadEditableTable(model, "Joint Coordinates");
             EditableTable areas = ReadEditableTable(model, "Connectivity - Area");
             EditableTable sections = ReadEditableTable(model, "Area Section Assignments");

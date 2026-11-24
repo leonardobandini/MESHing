@@ -1,5 +1,13 @@
 # MESHing — changelog
 
+## MESHing 3.0.21
+
+- SAP2000 28.0 beta: abilitato il percorso FAST CSV per le righe di continuazione dei poligoni, gia' usato su SAP2000 27.1. Le prove isolate su copie non sostituiscono la regressione completa.
+- Il plugin usa le unita' correnti senza cambiarle all'apertura o al cambio modello. Il ripristino delle temperature conserva una conversione specifica fra unita' del database e unita' correnti nelle versioni che ne hanno bisogno.
+- Eliminato il recupero automatico delle intestazioni editabili vuote: una tabella con chiavi mancanti viene rifiutata, senza indovinare le colonne.
+- Rimangono le verifiche delle procedure di progetto, il ripristino delle temperature tramite API oggetto, il padding dei triangoli, il CSV per i poligoni e le cautele per tabelle globali o non leggibili.
+- Incluse le modifiche locali 3.0.19: messaggio di completamento SAP riconosciuto anche in italiano e preferenza dell'avviso di backup memorizzata.
+
 ## MESHing 3.0.18 — pubblicata il 9 novembre 2026
 
 - Prima di Genera, una diagnostica unica opzionale e attiva per default elenca le aree non complanari e le coppie di nodi selezionati troppo vicini. La soglia per i nodi è configurabile come percentuale della dimensione massima della mesh (default 5%); opzione e valore vengono ricordati. La diagnostica legge la selezione corrente, anche se effettuata dopo l'apertura del plugin.

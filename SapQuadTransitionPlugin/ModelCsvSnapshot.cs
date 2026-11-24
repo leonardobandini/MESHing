@@ -130,118 +130,6 @@ namespace SapQuadTransitionPlugin
             using (var input = File.OpenRead(path)) return sha.ComputeHash(input);
         }
 
-        private static IEnumerable<string[]> CsvRows(string csv)
-        {
-            var row = new List<string>();
-            var value = new StringBuilder();
-            bool quoted = false;
-            for (int i = 0; i < csv.Length; i++)
-            {
-                char c = csv[i];
-                if (quoted)
-                {
-                    if (c == '"')
-                    {
-                        if (i + 1 < csv.Length && csv[i + 1] == '"') { value.Append('"'); i++; }
-                        else quoted = false;
-                    }
-                    else value.Append(c);
-                }
-                else if (c == '"' && value.Length == 0) quoted = true;
-                else if (c == ',') { row.Add(value.ToString()); value.Clear(); }
-                else if (c == '\r' || c == '\n')
-                {
-                    if (c == '\r' && i + 1 < csv.Length && csv[i + 1] == '\n') i++;
-                    row.Add(value.ToString()); value.Clear();
-                    yield return row.ToArray(); row.Clear();
-                }
-                else if (c == '"') throw new InvalidDataException("Unexpected quote in SAP2000 table CSV.");
-                else value.Append(c);
-            }
-            if (quoted) throw new InvalidDataException("Unclosed quoted SAP2000 table CSV field.");
-            if (row.Count != 0 || value.Length != 0)
-            {
-                row.Add(value.ToString());
-                yield return row.ToArray();
-            }
-        }
-
-        internal static bool CsvRowMatchesEditingData(string[] csvRow, string[] data, int dataOffset, int width)
-        {
-            if (csvRow == null || data == null || width < 0 || dataOffset < 0 ||
-                dataOffset + width > data.Length || csvRow.Length < width)
-                return false;
-            var memo = new Dictionary<long, int>();
-            Func<int, int, int> countAlignments = null;
-            countAlignments = (field, cell) =>
-            {
-                if (field == width) return cell == csvRow.Length ? 1 : 0;
-                long state = ((long)field << 32) | (uint)cell;
-                int cached;
-                if (memo.TryGetValue(state, out cached)) return cached;
-                int remainingFields = width - field - 1;
-                int lastCell = csvRow.Length - remainingFields - 1;
-                int matches = 0;
-                var value = new StringBuilder();
-                for (int end = cell; end <= lastCell; end++)
-                {
-                    if (end != cell) value.Append(',');
-                    value.Append(csvRow[end]);
-                    if (!string.Equals(value.ToString(), data[dataOffset + field], StringComparison.Ordinal))
-                        continue;
-                    matches += countAlignments(field + 1, end + 1);
-                    if (matches > 1) break;
-                }
-                memo[state] = matches;
-                return matches;
-            };
-            return countAlignments(0, 0) == 1;
-        }
-
-        internal static string[] RecoverFieldKeys(cSapModel model, string key, int version,
-            int records, string[] data, int width, string groupName = "")
-        {
-            int csvVersion = 0, metadataVersion = 0, metadataCount = 0;
-            string csv = "";
-            Check(model.DatabaseTables.GetTableForEditingCSVString(key, groupName, ref csvVersion, ref csv),
-                "reading CSV header for " + key, "DatabaseTables.GetTableForEditingCSVString");
-            string[] keys = null, names = null, descriptions = null, units = null;
-            bool[] importable = null;
-            Check(model.DatabaseTables.GetAllFieldsInTable(key, ref metadataVersion, ref metadataCount,
-                ref keys, ref names, ref descriptions, ref units, ref importable),
-                "reading field metadata for " + key, "DatabaseTables.GetAllFieldsInTable");
-            if (csvVersion != version || metadataVersion != version || keys == null ||
-                keys.Length != metadataCount || data == null || data.Length != records * width)
-                throw new InvalidDataException("SAP2000 table versions or array shape differ for " + key +
-                    ": editingVersion=" + version + " csvVersion=" + csvVersion +
-                    " metadataVersion=" + metadataVersion + " metadataCount=" + metadataCount +
-                    " keyCount=" + (keys == null ? -1 : keys.Length) +
-                    " width=" + width + " records=" + records +
-                    " dataCount=" + (data == null ? -1 : data.Length));
-            using (IEnumerator<string[]> rows = CsvRows(csv ?? "").GetEnumerator())
-            {
-                if (!rows.MoveNext()) throw new InvalidDataException("Empty SAP2000 table CSV: " + key);
-                string[] header = rows.Current;
-                if (header.Length != width) throw new InvalidDataException("CSV column count differs from editing array for " + key);
-                header[0] = header[0].TrimStart('\ufeff');
-                var available = new HashSet<string>(keys, StringComparer.Ordinal);
-                if (header.Any(field => string.IsNullOrWhiteSpace(field) || !available.Contains(field)) ||
-                    header.Distinct(StringComparer.Ordinal).Count() != width)
-                    throw new InvalidDataException("CSV field keys are missing, repeated or absent from SAP2000 metadata for " + key);
-                for (int record = 0; record < records; record++)
-                {
-                    bool hasRow = rows.MoveNext();
-                    if (!hasRow || !CsvRowMatchesEditingData(rows.Current, data, record * width, width))
-                        throw new InvalidDataException("CSV row cannot be aligned with the editing array for " + key +
-                            " at row " + record + ": csvWidth=" + (hasRow ? rows.Current.Length : -1) +
-                            " editingWidth=" + width + " csvHeader=" + string.Join("|", header));
-                }
-                if (rows.MoveNext() && rows.Current.Any(value => value.Length != 0))
-                    throw new InvalidDataException("CSV has extra rows not in the editing array for " + key);
-                return header;
-            }
-        }
-
         private static Table CompleteFilteredEditingTable(cSapModel model, string key, int editingVersion,
             int editingRecords, string[] editingFields, string[] editingData, string groupName)
         {
@@ -257,8 +145,7 @@ namespace SapQuadTransitionPlugin
 
             string[] targetFields = editingFields;
             if (targetFields.Any(string.IsNullOrWhiteSpace))
-                targetFields = RecoverFieldKeys(model, key, editingVersion, editingRecords,
-                    editingData, editingFields.Length, groupName);
+                throw new InvalidDataException("SAP2000 returned blank editing field keys for " + key + ".");
             int metadataVersion = 0, metadataCount = 0;
             string[] metadataKeys = null, names = null, descriptions = null, units = null;
             bool[] importable = null;
@@ -438,7 +325,7 @@ namespace SapQuadTransitionPlugin
                 if (full != null) return full;
             }
             if (fields != null && fields.Any(string.IsNullOrWhiteSpace))
-                fields = RecoverFieldKeys(model, key, version, records, data, fields.Length, groupName);
+                throw new InvalidDataException("SAP2000 returned blank editing field keys for " + key + ".");
             if (fields != null && fields.Length > 0 && fields.All(string.IsNullOrEmpty) &&
                 (key == "Joint Coordinates" || key == "Connectivity - Area" || key == "Area Section Assignments"))
             {
@@ -1116,6 +1003,24 @@ namespace SapQuadTransitionPlugin
             int temperature = Array.IndexOf(table.Fields, "Temp");
             if (area < 0 || pattern < 0 || temperature < 0)
                 throw new InvalidDataException("Area Material Temperatures has an unexpected schema.");
+            string versionText = "";
+            double versionNumber = 0;
+            Check(model.GetVersion(ref versionText, ref versionNumber), "reading SAP2000 version for temperature restoration",
+                "cSapModel.GetVersion");
+            Version version;
+            bool databaseTemperature = Version.TryParse(versionText, out version)
+                ? version.CompareTo(new Version(27, 2)) >= 0 : versionNumber >= 27.2 - 1e-9;
+            eTemperature databaseTemperatureUnit = eTemperature.NotApplicable;
+            eTemperature presentTemperatureUnit = eTemperature.NotApplicable;
+            if (databaseTemperature)
+            {
+                eForce databaseForce = default(eForce), presentForce = default(eForce);
+                eLength databaseLength = default(eLength), presentLength = default(eLength);
+                Check(model.GetDatabaseUnits_2(ref databaseForce, ref databaseLength, ref databaseTemperatureUnit),
+                    "reading database temperature units", "cSapModel.GetDatabaseUnits_2");
+                Check(model.GetPresentUnits_2(ref presentForce, ref presentLength, ref presentTemperatureUnit),
+                    "reading present temperature units", "cSapModel.GetPresentUnits_2");
+            }
             for (int row = 0; row < table.Records; row++)
             {
                 int offset = row * table.Fields.Length;
@@ -1123,11 +1028,22 @@ namespace SapQuadTransitionPlugin
                 if (!double.TryParse(table.Data[offset + temperature].Replace(',', '.'), NumberStyles.Float,
                     CultureInfo.InvariantCulture, out value))
                     throw new InvalidDataException("Invalid area material temperature for " + table.Data[offset + area]);
+                if (databaseTemperature)
+                    value = ConvertSnapshotTemperature(value, databaseTemperatureUnit, presentTemperatureUnit);
                 string jointPattern = table.Data[offset + pattern];
                 if (jointPattern == "None") jointPattern = "";
                 Check(model.AreaObj.SetMatTemp(table.Data[offset + area], value, jointPattern, eItemType.Objects),
                     "restoring area material temperature " + table.Data[offset + area], "AreaObj.SetMatTemp");
             }
+        }
+
+        private static double ConvertSnapshotTemperature(double value, eTemperature source, eTemperature target)
+        {
+            if ((source != eTemperature.C && source != eTemperature.F) ||
+                (target != eTemperature.C && target != eTemperature.F))
+                throw new InvalidDataException("Unsupported SAP2000 temperature unit while restoring area assignments.");
+            if (source == target) return value;
+            return source == eTemperature.C ? value * 9.0 / 5.0 + 32.0 : (value - 32.0) * 5.0 / 9.0;
         }
 
         private static void RestoreAreaDesignProcedures(cSapModel model, IEnumerable<Table> tables)
